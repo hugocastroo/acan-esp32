@@ -220,17 +220,23 @@ void loop () {
         JSONVar myObject;
         String sensorType = "";
         //According to the id of the CANMessage, sort the message to the corresponding sensor
-        if(false){
+        if(queuedMessages[i].id == 0xffff){
           sensorType = "tempreture";
         }
-        else if(true){
+        else if(queuedMessages[i].id == 0xaaaa){
+          sensorType = "humidity";
+        }
+        else if(queuedMessages[i].id == 0xbbbb){
+          sensorType = "tempreture";
+        }
+        else if(queuedMessages[i].id == 0xcccc){
           sensorType = "humidity";
         }
         //Set every attribute of the JSONVar
         myObject["id"] = String(queuedMessages[i].id);
         myObject["type"] = sensorType;
         myObject["time"] = timeStamps[i];
-        myObject["value"] = (float)55; //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
+        myObject["value"] = queuedMessages[i].data32[0]; //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
         myObject["row"] = (long) queuedMessages[i].id;//Ask jeschke how we are gonna do this positioning
         myObject["column"] = (long) queuedMessages[i].id;
         //POST the JSON object
@@ -250,40 +256,40 @@ void loop () {
     http.begin(serverName);
     // Send HTTP GET request
     int httpResponseCode = http.GET();
-    String payload = "{}"; //Variable to store the GET package
-    JSONVar keys = "Failed";
-    //Negative response codes are an error. 200 means OK
-    if (httpResponseCode>0) {
-      //Serial.print("HTTP Response code: "); //Display response code if desired
-      //Serial.println(httpResponseCode);
-      payload = http.getString();
-      //Parse payload to JSON object in order to be able to use the data
-      JSONVar myObject = JSON.parse(payload);
-      // JSON.typeof(jsonVar) can be used to get the type of the var
-      if (JSON.typeof(myObject) == "undefined") {
-        Serial.println("Parsing input failed!");
-        keys = "Failed";
-      }
-      else{
-        // myObject.keys() can be used to get an array of all the keys in the object
-        keys = myObject[0].keys();
-        //Loop for printing the JSON elements if desired
-        // for (int j = 0; j < myObject.length();j++){
-        //   for (int i = 0; i < keys.length(); i++){
-        //     Serial.print(keys[i]);
-        //     Serial.print(": ");
-        //     Serial.print(myObject[j][keys[i]]);
-        //     Serial.print(" / ");
-        //   }
-        //   Serial.print("\n");
-        // }
-      }
-    }
-    else {
-      //Serial.print("Error code: ");
-      //Serial.println(httpResponseCode);
-      keys = "Failed";
-    }
+    // String payload = "{}"; //Variable to store the GET package
+    // JSONVar keys = "Failed";
+    // //Negative response codes are an error. 200 means OK
+    // if (httpResponseCode>0) {
+    //   //Serial.print("HTTP Response code: "); //Display response code if desired
+    //   //Serial.println(httpResponseCode);
+    //   payload = http.getString();
+    //   //Parse payload to JSON object in order to be able to use the data
+    //   JSONVar myObject = JSON.parse(payload);
+    //   // JSON.typeof(jsonVar) can be used to get the type of the var
+    //   if (JSON.typeof(myObject) == "undefined") {
+    //     Serial.println("Parsing input failed!");
+    //     keys = "Failed";
+    //   }
+    //   else{
+    //     // myObject.keys() can be used to get an array of all the keys in the object
+    //     keys = myObject[0].keys();
+    //     //Loop for printing the JSON elements if desired
+    //     // for (int j = 0; j < myObject.length();j++){
+    //     //   for (int i = 0; i < keys.length(); i++){
+    //     //     Serial.print(keys[i]);
+    //     //     Serial.print(": ");
+    //     //     Serial.print(myObject[j][keys[i]]);
+    //     //     Serial.print(" / ");
+    //     //   }
+    //     //   Serial.print("\n");
+    //     // }
+    //   }
+    // }
+    // else {
+    //   //Serial.print("Error code: ");
+    //   //Serial.println(httpResponseCode);
+    //   keys = "Failed";
+    // }
     // Free resources
     http.end();
     return httpResponseCode;
@@ -306,7 +312,7 @@ void loop () {
       http.addHeader("Content-Type", "application/json");
       //httpResponseCode = http.POST("{ \"sensordata\":[ { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 }, { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 } ] }");
       String json = "{ \"sensordata\":[" + JSON.stringify(myObject) + "]}";
-      Serial.println(json);
+      //Serial.println(json);
       httpResponseCode = http.POST(json);
       //"{ \"sensordata\":[]}"
     }
@@ -328,8 +334,43 @@ void loop () {
     }
     time(&now);
     //Convertion from UNIX seconds to ISO8601
-    String timestamp = String(year(now)) + "-" + String(month(now)) + "-" + String(day(now)) + "T" + String(hour(now)) + ":" + String(minute(now)) + ":" + String(second(now)) + "+00:00";
-    //Serial.println(timestamp);
+    String yearISO = String(year(now));
+    String monthISO = "";
+    String dayISO = "";
+    String hourISO = "";
+    String minuteISO = "";
+    String secondISO = "";
+    if(month(now) <= 9){
+      monthISO = "0" + String(month(now));
+    }
+    else{
+      monthISO = String(month(now));
+    }
+    if(day(now) <=9){
+      dayISO = "0" + String(day(now));
+    }
+    else{
+      dayISO = String(day(now));
+    }
+    if(hour(now) <=9){
+      hourISO = "0" + String(hour(now));
+    }
+    else{
+      hourISO = String(hour(now));
+    }
+    if(minute(now) <=9){
+      minuteISO = "0" + String(minute(now));
+    }
+    else{
+      minuteISO = String(minute(now));
+    }
+    if(second(now) <=9){
+      secondISO = "0" + String(second(now));
+    }
+    else{
+      secondISO = String(second(now));
+    }
+    String timestamp = yearISO + "-" + monthISO + "-" + dayISO + "T" + hourISO + ":" + minuteISO + ":" + secondISO + "+00:00";
     return timestamp;
   }
 
