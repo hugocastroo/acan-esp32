@@ -11,7 +11,6 @@
 #include <ACAN_ESP32.h>
 #include <core_version.h> // For ARDUINO_ESP32_RELEASE
 #include "time.h"         // Library for the EPOCH TIME
-#include <TimeLib.h>      //Library for processing the timestamp
 #include <WiFi.h>         //Library for the WiFi Modul
 #include <HTTPClient.h>   //Library for the http functions
 #include <Arduino_JSON.h> //Library for working with JSON syntax in Arduino
@@ -60,12 +59,11 @@ void setup() {
  //--- Switch on builtin led to know that the program is running correctly
   pinMode (LED_BUILTIN, OUTPUT);
   digitalWrite (LED_BUILTIN, HIGH);
-  //--- Start serial and WiFi connection and well as NTP connection for EPOCH time
-  Serial.begin (115200);
-  initWiFi();
-  configTime(0, 0, ntpServer);
+  Serial.begin (115200); // Start serial 
+  initWiFi(); // Init WiFi
+  configTime(0, 0, ntpServer); //Start NTP server connection for the UNIX TIME
   delay (100);
-  //--- Configure ESP32 CAN
+  //Configure ESP32 CAN
   ACAN_ESP32_Settings settings (DESIRED_BIT_RATE);
   settings.mRxPin = GPIO_NUM_4; // Optional, default Tx pin is GPIO_NUM_4
   settings.mTxPin = GPIO_NUM_5; // Optional, default Rx pin is GPIO_NUM_5
@@ -77,7 +75,6 @@ void setup() {
     busInfo(errorCode,settings);
   }
 }
-
 //----------------------------------------------------------------------------------------
 //   LOOP
 //----------------------------------------------------------------------------------------
@@ -89,7 +86,7 @@ void loop () {
   remoteFrame.rtr = true;
   CANMessage frame; //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0; //Variable for the elements position in the arrays
-  //Turn Power off for the slaves in order to come online
+  //Turn Power ON for the slaves in order to come online
   if (samplingTimeInterval < millis ()) {
     samplingTimeInterval += TimeInterval;
                                             //Turn Power ON for the slaves in order to come online
@@ -118,13 +115,13 @@ void loop () {
       delay(100);
     }
                                                   //Turn Power off for the slaves in order to come online
+    checkWiFi(); //Check for the WiFi connection before posting the messages
     processQueuedMessages(queuedMessages); //Once the messages has been queued, they will be send
   }
 }
 //----------------------------------------------------------------------------------------
 //Help/Debug functions
-
-  //--- Display ESP32 Chip Info
+  //Display ESP32 Chip Info
   void chipInfo(esp_chip_info_t chip_info){
     esp_chip_info (&chip_info);
     Serial.print ("ESP32 Arduino Release: ");
@@ -141,7 +138,6 @@ void loop () {
     Serial.print (APB_CLK_FREQ);
     Serial.println (" Hz");
   }
-
   //Display BUS settings and or error codes
   void busInfo(uint32_t errorCode,ACAN_ESP32_Settings settings){
     if (errorCode == 0) {
@@ -177,7 +173,6 @@ void loop () {
       digitalWrite (LED_BUILTIN, HIGH);
     }
   }
-
   //Statics information of the BUS will be displayed in the serial monitor
   void displayBUSstatistics(){
     if (ErrorInfoPrint){
@@ -195,7 +190,6 @@ void loop () {
       Serial.println (TWAI_TX_ERR_CNT_REG) ;
     }
   }
-
   //Print the frame data in the serial monitor
   void framePrinting(CANMessage frame){
     Serial.print ("**** Received ");
@@ -210,26 +204,18 @@ void loop () {
     }
     Serial.print("\n");
   }
-
   //Process the queued messages
   void processQueuedMessages(CANMessage queuedMessages[]){
-    
     if(WiFi.status()== WL_CONNECTED){
       //Initialize the JSON object from the queuedMessages Array
       for (int i = 0; i<currentMessagesQueued;i++){
         JSONVar myObject;
-        String sensorType = "";
+        char* sensorType = "";
         //According to the id of the CANMessage, sort the message to the corresponding sensor
-        if(queuedMessages[i].id == 0xffff){
+        if(queuedMessages[i].id >= 0xff00){
           sensorType = "tempreture";
         }
-        else if(queuedMessages[i].id == 0xaaaa){
-          sensorType = "humidity";
-        }
-        else if(queuedMessages[i].id == 0xbbbb){
-          sensorType = "tempreture";
-        }
-        else if(queuedMessages[i].id == 0xcccc){
+        else if(queuedMessages[i].id <= 0xee00){
           sensorType = "humidity";
         }
         //Set every attribute of the JSONVar
@@ -249,7 +235,6 @@ void loop () {
     //Serial.println("WiFi Disconnected");
     }
   }
-
   int httpGETRequest(const char* serverName) {
     //Start the http connection
     HTTPClient http;
@@ -294,7 +279,6 @@ void loop () {
     http.end();
     return httpResponseCode;
   }
-
   int httpPOSTRequest(const char* serverName, JSONVar myObject){
     //Get the JSON elements descriptions in case it is necessary to create a new object.
     //jsonElements = httpGETRequest(serverName);
@@ -324,62 +308,40 @@ void loop () {
     http.end();
     return httpResponseCode;
   }
-
   // Function that gets current epoch time
   String getTime() {
-    time_t now;
     struct tm timeinfo;
+    char timestamp[26];
     if (!getLocalTime(&timeinfo)) {
-      return(String(0));
+      //In case that this is not desired, then check how to store and load the last date from the EEPROM or from somewhere else
+      //This would not give the exact date, but would keep the data chronologically at least.
+      //In case there is not possible to get the data from the ntp server, then it will give the  Die Unixzeit zählt die vergangenen Sekunden seit Donnerstag, dem 1. Januar 1970, 00:00 Uhr
+      sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,timeinfo.tm_hour+1, timeinfo.tm_min, timeinfo.tm_sec);
+      return(timestamp);
     }
-    time(&now);
-    //Convertion from UNIX seconds to ISO8601
-    String yearISO = String(year(now));
-    String monthISO = "";
-    String dayISO = "";
-    String hourISO = "";
-    String minuteISO = "";
-    String secondISO = "";
-    if(month(now) <= 9){
-      monthISO = "0" + String(month(now));
-    }
-    else{
-      monthISO = String(month(now));
-    }
-    if(day(now) <=9){
-      dayISO = "0" + String(day(now));
-    }
-    else{
-      dayISO = String(day(now));
-    }
-    if(hour(now) <=9){
-      hourISO = "0" + String(hour(now));
-    }
-    else{
-      hourISO = String(hour(now));
-    }
-    if(minute(now) <=9){
-      minuteISO = "0" + String(minute(now));
-    }
-    else{
-      minuteISO = String(minute(now));
-    }
-    if(second(now) <=9){
-      secondISO = "0" + String(second(now));
-    }
-    else{
-      secondISO = String(second(now));
-    }
-    String timestamp = yearISO + "-" + monthISO + "-" + dayISO + "T" + hourISO + ":" + minuteISO + ":" + secondISO + "+00:00";
+    //Get the time stamp in the ISO8601 format
+    //YYYY-MM-DDTHH:MM:SS+00:00
+    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,timeinfo.tm_hour+1, timeinfo.tm_min, timeinfo.tm_sec);
     return timestamp;
   }
-
   // Initialize WiFi
   void initWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED){
-      delay(1000);
+    delay(500);
+    //Serial.println(WiFi.localIP()); //Show the IP address of the ESP32 Modul if needed
+    }
+  // Check WiFi connection
+  void checkWiFi() {
+    //Try to connect if the WL_CONNECTED is false
+    if(WiFi.status() != WL_CONNECTED){
+    Serial.println("Not connected, Trying to connect");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    delay(500);
+    }
+    else{
+      //WiFi was already connected
     }
     //Serial.println(WiFi.localIP()); //Show the IP address of the ESP32 Modul if needed
   }
