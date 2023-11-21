@@ -4,65 +4,67 @@
 #ifndef ARDUINO_ARCH_ESP32
   #error "Select an ESP32 board"
 #endif
-
 //----------------------------------------------------------------------------------------
 //   Include files
 //----------------------------------------------------------------------------------------
 #include <ACAN_ESP32.h>
 #include <core_version.h> // For ARDUINO_ESP32_RELEASE
 #include "time.h"         // Library for the EPOCH TIME
+#include <TimeLib.h>      // Library for time functions
 #include <WiFi.h>         //Library for the WiFi Modul
 #include <HTTPClient.h>   //Library for the http functions
 #include <Arduino_JSON.h> //Library for working with JSON syntax in Arduino
-
-//----------------------------------------------------------------------------------------
-//  ESP32 Desired Bit Rate
-//----------------------------------------------------------------------------------------
-static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL ; // 125 Kb/s
-
+#include <Preferences.h>  //Library for storing and reading values from the EEPROM
 //----------------------------------------------------------------------------------------
 //   SETUP and Variables
 //----------------------------------------------------------------------------------------
 //Solution for no LED_BUILTIN
 #define LED_BUILTIN 2 //Change LED Position if using different board
+#define PIN_POWERON 21 //Change PIN Position if using other PIN
 #define InfoPrint 0 //Change flag to show chip and BUS settings in the serial monitor 0-1
-#define ErrorInfoPrint 1 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
-#define TimeInterval 30000 //Time interval for the system to trigger the bus scan process
+#define ErrorInfoPrint 0 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
+#define TimeInterval 1000*30*1 //Time interval for the system to trigger the bus scan process
 #define RemoteFrameID 99 //ID for the remote frames to ask for information from the slaves
 #define SlavesTurnOnDelay 5000 //Wait for the slaves to warm up and be able to send information
-#define ArrayLimit 99 //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY
-
+#define ArrayLimit 99 //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
+#define Samplings 100
+static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL ; // 125 Kb/s ESP32 Desired Bit Rate
 //Counter for debugging and statistics of the BUS
-static uint32_t ReceivedFrameCount = 0;
-static uint32_t SentFrameCount = 0;
-static uint32_t samplingTimeInterval = 0;
-static uint32_t samplingTimeFreq = 100;
-static uint32_t samplingCounter = 0;
-int currentMessagesQueued = 0;
-
+uint32_t ReceivedFrameCount = 0;
+uint32_t SentFrameCount = 0;
+uint32_t samplingTimeInterval = 0;
+uint32_t samplingCounter = 0;
+uint32_t currentMessagesQueued = 0;
 //Array for Queuing the received messages
 CANMessage queuedMessages[ArrayLimit];
 String timeStamps[ArrayLimit];
-
+//static const char* const timeStamps[ArrayLimit]; //Check if it works, this way and if not then find a way to do not use STRING
 // Replace with network credentials
-const char* ssid = "castro";
-const char* password = "msnc5000";
-
+const char* ssid = "nordisch-Box-1";
+const char* password = "87654321";
 // NTP server to request epoch time
 const char* ntpServer = "pool.ntp.org";
-
 //Your Domain name with URL path or IP address with path for HTTP Posting
 const char* serverName = "https://europe-west1-gruenfacade.cloudfunctions.net/app/api/facade/test/sensordata";
 //JSONVar jsonElements;
+//Variables and instances for the EEPROM rewrite/read procedure
+Preferences preferences;
+const char* spaceEEPROM = "timestamp";
+const char* paramEEPROM = "stamp";
 
+//----------------------------------------------------------------------------------------
 void setup() {
- //--- Switch on builtin led to know that the program is running correctly
+  //Switch on builtin led to know that the program started
   pinMode (LED_BUILTIN, OUTPUT);
   digitalWrite (LED_BUILTIN, HIGH);
+  //Configure the OUTPUT PIN for turning on and off the slaves. Set it OFF
+  pinMode (PIN_POWERON, OUTPUT);
+  digitalWrite (PIN_POWERON, LOW);
   Serial.begin (115200); // Start serial 
   initWiFi(); // Init WiFi
+  getEEPROMTimestamp(); //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
   configTime(0, 0, ntpServer); //Start NTP server connection for the UNIX TIME
-  delay (100);
+  delay (1000);
   //Configure ESP32 CAN
   ACAN_ESP32_Settings settings (DESIRED_BIT_RATE);
   settings.mRxPin = GPIO_NUM_4; // Optional, default Tx pin is GPIO_NUM_4
@@ -73,10 +75,8 @@ void setup() {
     esp_chip_info_t chip_info;
     chipInfo(chip_info);
     busInfo(errorCode,settings);
+    }
   }
-}
-//----------------------------------------------------------------------------------------
-//   LOOP
 //----------------------------------------------------------------------------------------
 void loop () {
   //CANMessages initialization
@@ -86,10 +86,9 @@ void loop () {
   remoteFrame.rtr = true;
   CANMessage frame; //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0; //Variable for the elements position in the arrays
-  //Turn Power ON for the slaves in order to come online
+  digitalWrite (PIN_POWERON, HIGH);//Turn Power ON for the slaves in order to come online
   if (samplingTimeInterval < millis ()) {
     samplingTimeInterval += TimeInterval;
-                                            //Turn Power ON for the slaves in order to come online
     delay(SlavesTurnOnDelay);
     //Sent remote frame to the BUS in order to get information from the Slaves
     const bool okRemoteFrame = ACAN_ESP32::can.tryToSend (remoteFrame);
@@ -102,23 +101,23 @@ void loop () {
     }
     displayBUSstatistics(); //If flag ErrorInfoPrint is active, then statics information will be displayed in the serial monitor
     //Sample for a certain time for the slave's answers
-    while(samplingCounter <= samplingTimeFreq){
+    while(samplingCounter <= Samplings){
       if (ACAN_ESP32::can.receive (frame)){
-      queuedMessages[arrayIndex] = frame; //Add the received frames to a Queue in order to process them later
-      timeStamps[arrayIndex] = getTime();
-      ReceivedFrameCount += 1;
-      arrayIndex += 1;
-      currentMessagesQueued = arrayIndex;
-      //framePrinting(frame); //Print the data of the received frames if desired
+        queuedMessages[arrayIndex] = frame; //Add the received frames to a Queue in order to process them later
+        timeStamps[arrayIndex] = getTime();
+        ReceivedFrameCount += 1;
+        arrayIndex += 1;
+        currentMessagesQueued = arrayIndex;
+        //framePrinting(frame); //Print the data of the received frames if desired
       }
       samplingCounter += 1;
-      delay(100);
+      delay(100); //Check how small this can get
     }
-                                                  //Turn Power off for the slaves in order to come online
+    digitalWrite (PIN_POWERON, LOW);//Turn Power off for the slaves in order to spare energy
     checkWiFi(); //Check for the WiFi connection before posting the messages
     processQueuedMessages(queuedMessages); //Once the messages has been queued, they will be send
   }
-}
+  }
 //----------------------------------------------------------------------------------------
 //Help/Debug functions
   //Display ESP32 Chip Info
@@ -137,7 +136,7 @@ void loop () {
     Serial.print ("APB CLOCK: ");
     Serial.print (APB_CLK_FREQ);
     Serial.println (" Hz");
-  }
+    }
   //Display BUS settings and or error codes
   void busInfo(uint32_t errorCode,ACAN_ESP32_Settings settings){
     if (errorCode == 0) {
@@ -172,7 +171,7 @@ void loop () {
       delay(250);
       digitalWrite (LED_BUILTIN, HIGH);
     }
-  }
+    }
   //Statics information of the BUS will be displayed in the serial monitor
   void displayBUSstatistics(){
     if (ErrorInfoPrint){
@@ -189,7 +188,7 @@ void loop () {
       Serial.print (" TXERR ") ;
       Serial.println (TWAI_TX_ERR_CNT_REG) ;
     }
-  }
+    }
   //Print the frame data in the serial monitor
   void framePrinting(CANMessage frame){
     Serial.print ("**** Received ");
@@ -203,7 +202,7 @@ void loop () {
       Serial.print(", ");
     }
     Serial.print("\n");
-  }
+    }
   //Process the queued messages
   void processQueuedMessages(CANMessage queuedMessages[]){
     if(WiFi.status()== WL_CONNECTED){
@@ -232,9 +231,11 @@ void loop () {
       }
     }
     else {
+    checkWiFi(); //Check for the WiFi connection before posting the messages
     //Serial.println("WiFi Disconnected");
     }
-  }
+    }
+  //Send a GETRequest to the server to check for availability
   int httpGETRequest(const char* serverName) {
     //Start the http connection
     HTTPClient http;
@@ -278,7 +279,8 @@ void loop () {
     // Free resources
     http.end();
     return httpResponseCode;
-  }
+    }
+  //Post a message in the server
   int httpPOSTRequest(const char* serverName, JSONVar myObject){
     //Get the JSON elements descriptions in case it is necessary to create a new object.
     //jsonElements = httpGETRequest(serverName);
@@ -307,41 +309,71 @@ void loop () {
     // Free resources
     http.end();
     return httpResponseCode;
-  }
+    }
   // Function that gets current epoch time
   String getTime() {
     struct tm timeinfo;
     char timestamp[26];
+    //This would not give the exact date, but would keep the data chronologically at least.
+    //The last time from NTP or working time from the ESP32 will be stored in the EEPROM
+    //getEEPROMTimestamp(); //We do not use it here, because if so, then it will set the time everytime according to the value in the the EEPROM, that is why it should be done just once the program starts and not later.
+    //Get the current time in the device since the NTP connection failed. after getting the current time in the device, store the current time in the EEPROM for future processing in case the device goes off
     if (!getLocalTime(&timeinfo)) {
-      //In case that this is not desired, then check how to store and load the last date from the EEPROM or from somewhere else
-      //This would not give the exact date, but would keep the data chronologically at least.
-      //In case there is not possible to get the data from the ntp server, then it will give the  Die Unixzeit zählt die vergangenen Sekunden seit Donnerstag, dem 1. Januar 1970, 00:00 Uhr
-      sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,timeinfo.tm_hour+1, timeinfo.tm_min, timeinfo.tm_sec);
+      //Get the time stamp in the ISO8601 format
+      //YYYY-MM-DDTHH:MM:SS+00:00
+      sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", year(), month(), day(),hour(), minute(), second());
+      overwriteEEPROMTimestamp(now());
       return(timestamp);
+      }
+    else{
+      //Get the time stamp in the ISO8601 format
+      //YYYY-MM-DDTHH:MM:SS+00:00
+      sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,timeinfo.tm_hour+1, timeinfo.tm_min, timeinfo.tm_sec);
+      //Overwrite the EEPROMtimeStamp with the current value from the NTP server to refresh it with new data
+      setTime(timeinfo.tm_hour+1, timeinfo.tm_min, timeinfo.tm_sec,timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900);
+      overwriteEEPROMTimestamp(now());
+      return timestamp;
+      }
     }
-    //Get the time stamp in the ISO8601 format
-    //YYYY-MM-DDTHH:MM:SS+00:00
-    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,timeinfo.tm_hour+1, timeinfo.tm_min, timeinfo.tm_sec);
-    return timestamp;
-  }
   // Initialize WiFi
   void initWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
-    delay(500);
+    delay(2000);
+    checkWiFi(); //Check for the WiFi connection before posting the messages
     //Serial.println(WiFi.localIP()); //Show the IP address of the ESP32 Modul if needed
     }
   // Check WiFi connection
   void checkWiFi() {
     //Try to connect if the WL_CONNECTED is false
     if(WiFi.status() != WL_CONNECTED){
-    Serial.println("Not connected, Trying to connect");
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    delay(500);
+      //Serial.println("Not connected, Trying to connect");
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(ssid, password);
+      delay(2000);
     }
     else{
       //WiFi was already connected
     }
     //Serial.println(WiFi.localIP()); //Show the IP address of the ESP32 Modul if needed
-  }
+    }
+
+  //Read EEPROM-Timestamp value
+  void getEEPROMTimestamp() {
+    //init preference
+    preferences.begin(spaceEEPROM, false);
+    //preferences.clear(); // remove all preferences in namespace myfile
+    //preferences.remove("timeStampID");// remove varname in the namespace
+    long readstamp = preferences.getULong(paramEEPROM, 0); //
+    preferences.end();
+    setTime(readstamp);
+    }
+  //Overwrite the EEPROM-Timestamp value
+  void overwriteEEPROMTimestamp(long stamp) {
+    //init preference
+    preferences.begin(spaceEEPROM, false);
+    //preferences.clear(); // remove all preferences in namespace myfile
+    //preferences.remove("varname");// remove varname in the namespace
+    preferences.putULong(paramEEPROM, stamp);
+    preferences.end();
+    }
