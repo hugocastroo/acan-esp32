@@ -1,3 +1,26 @@
+/* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%	This program is part of the research project "Automationssystem für 
+%	Fassadenbegrünung zur Optimierung der Energieeffizienz von Gebäuden",
+%	from the Hochschule Flensbug.
+%   Name:           ESP32CANBUS Master script
+%   Description:    Script for a ESP32 Master in a CANBUS line. The CANBUS
+%					line is equiped with many Rasbperry Pi Pico modules
+%					that send temperatur and soil moisture measurements
+%					using the CANBUS protocol. After sampling the information
+%					in the CANBUS line, the script uploads the measurements
+%					using HTTP protocol.
+%					This Program is just a basic test script for testing the
+&					sensor behaviour, this approach should be implemented
+&					in a main program and/or another platform
+%   Date:           06/12/2023      
+%   Programmer:     Hugo Valentin Castro Saenz
+%   History:
+%	V01:			Test
+%	
+%  
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+
 //----------------------------------------------------------------------------------------
 //  Board Check
 //----------------------------------------------------------------------------------------

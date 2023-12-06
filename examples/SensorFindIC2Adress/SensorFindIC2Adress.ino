@@ -1,9 +1,24 @@
-/*********
-  Rui Santos
-  Complete project details at https://randomnerdtutorials.com  
-*********/
-
-#include <Wire.h>
+/* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%	This program is part of the research project "Automationssystem für 
+%	Fassadenbegrünung zur Optimierung der Energieeffizienz von Gebäuden",
+%	from the Hochschule Flensbug.
+%   Name:           Find sensor adress using I2C protocol
+%   Description:    Program used to find the address of different sensors
+%					which communication protocol is I2C. In this project it
+%					was used for the Hailege light sensor
+%					This Program is just a basic test script for testing the
+&					sensor behaviour, this approach should be implemented
+&					in a main program and/or another platform
+%   Date:           06/12/2023      
+%   Programmer:     Hugo Valentin Castro Saenz
+%   History:
+%	V01:			Adress of the sensor was acquired using this script.
+%	
+%  
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+//Needed libraries
+#include <Wire.h> //Library needed for the I2C communication protocol
  
 void setup() {
   Wire.begin();

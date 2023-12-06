@@ -1,12 +1,30 @@
-//----------------------------------------------------------------------------------------
+/* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%	This program is part of the research project "Automationssystem für 
+%	Fassadenbegrünung zur Optimierung der Energieeffizienz von Gebäuden",
+%	from the Hochschule Flensbug.
+%   Name:           ESP32CANBUS Master script
+%   Description:    Script for a ESP32 Master in a CANBUS line. The CANBUS
+%					line is equiped with many Rasbperry Pi Pico modules
+%					that send temperatur and soil moisture measurements
+%					using the CANBUS protocol. After sampling the information
+%					in the CANBUS line, the script uploads the measurements
+%					using HTTP protocol.
+%   Date:           06/12/2023      
+%   Programmer:     Hugo Valentin Castro Saenz
+%   History:
+%	V01:			Program uploads the measurements samplings to a test
+%					BACKEND.
+%					Measurments are readed from different Raspberry Pi Pico
+%					boards and sorted out.
+%	
+%  
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
 //  Board Check
-//----------------------------------------------------------------------------------------
 #ifndef ARDUINO_ARCH_ESP32
   #error "Select an ESP32 board"
 #endif
-//----------------------------------------------------------------------------------------
-//   Include files
-//----------------------------------------------------------------------------------------
+//   Include libraries
 #include <ACAN_ESP32.h>
 #include <core_version.h> // For ARDUINO_ESP32_RELEASE
 #include "time.h"         // Library for the EPOCH TIME
@@ -15,10 +33,7 @@
 #include <HTTPClient.h>   //Library for the http functions
 #include <Arduino_JSON.h> //Library for working with JSON syntax in Arduino
 #include <Preferences.h>  //Library for storing and reading values from the EEPROM
-//----------------------------------------------------------------------------------------
 //   SETUP and Variables
-//----------------------------------------------------------------------------------------
-//Solution for no LED_BUILTIN
 #define LED_BUILTIN 2 //Change LED Position if using different board
 #define PIN_POWERON 21 //Change PIN Position if using other PIN
 #define InfoPrint 0 //Change flag to show chip and BUS settings in the serial monitor 0-1

@@ -1,9 +1,37 @@
-#include <time.h>
-#include <TimeLib.h>
-#include <WiFi.h>         //Library for the WiFi Modul
-#include <Preferences.h>
+/* %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%	This program is part of the research project "Automationssystem für 
+%	Fassadenbegrünung zur Optimierung der Energieeffizienz von Gebäuden",
+%	from the Hochschule Flensbug.
+%   Name:           EEPROM write/read values test.
+%   Description:    Script gets a timestamp from a ntp server if internet
+%					connection is available. In case it is not, then it stores
+%					the last available timestamp in the EEPROM in order to
+%					remember this time for next powering on. The EEPROM stored
+%					value is read while booting. In case the NTP connection is
+%					not possible, then this value will be used as reference
+%					for the system and this will be used date until the ntp
+%					server is available. This also means that this timestamp
+%					will be overwritten in the EEPROM in order to keep a
+%					chronological order.
+%					This Program is just a basic test script for testing the
+&					sensor behaviour, this approach should be implemented
+&					in a main program and/or another platform
+%   Date:           06/12/2023      
+%   Programmer:     Hugo Valentin Castro Saenz
+%   History:
+%	V01:			EEPROM Read/write value test
+%	
+%  
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
 
-// Replace with network credentials
+//Included libraries
+#include <time.h>			//Library for the time functions
+#include <TimeLib.h>
+#include <WiFi.h>			//Library for the WiFi Modul
+#include <Preferences.h>	//Library for storing the variables in the EEPROM
+
+// Replace with the current network credentials
 const char* ssid = "nordisch-Box-1";
 const char* password = "87654321";
 // NTP server to request epoch time
