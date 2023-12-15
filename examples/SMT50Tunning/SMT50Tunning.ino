@@ -27,7 +27,7 @@ float HumidValue = 0;
 
 void setup() {
 	//Start serial monitor for debugging
-  Serial.begin(115200);
+  Serial.begin(9600);
   delay(1000);
 }
 
@@ -37,7 +37,7 @@ void loop() {
   //+0.0 - Offset for the ESP32 Kennlinie - Here should be implemented something else, since it is not linear for the whole range
   //Offset set to 0, it worked this way, I need to check it with a better multimeter again, to see the values from the sensor, it should not give mroe than 3 V
   //50/3 - SMT50 Sensor voltage to °C conversion
-  HumidValue = min(float(50),((analogRead(HumidPin)*(3.3/4095))+0.0)*(50/3));
+  HumidValue = ((analogRead(HumidPin)*(3.3/4095))+0.09)*(50/3);
   //3.3/4095 - Conversion to volts of the analog input
   //+0.09 - Offset for the ESP32 Kennlinie - Here should be implemented something else, since it is not linear for the whole range
   //-0.5*100 - SMT50 Sensor voltage to °C conversion
@@ -48,9 +48,9 @@ void loop() {
   Serial.print("°C, Humidity: ");
   Serial.print(HumidValue);
   Serial.println("%");
-  delay(1000*1);
+  delay(100*1);
   //Setting the value to 0, just to discard that the input get no measurement next cycle.
   TempValue = 0;
   HumidValue = 0;
-  delay(1000*60*5);
+  delay(1000*1*5);
 }

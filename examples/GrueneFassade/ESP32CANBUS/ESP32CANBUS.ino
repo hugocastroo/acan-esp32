@@ -12,6 +12,7 @@
 %   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V02:    CANBUS data scaling implementation for more precise data.
 %	V01:			Program uploads the measurements samplings to a test
 %					BACKEND.
 %					Measurments are readed from different Raspberry Pi Pico
@@ -38,8 +39,8 @@
 #define PIN_POWERON 21 //Change PIN Position if using other PIN
 #define InfoPrint 0 //Change flag to show chip and BUS settings in the serial monitor 0-1
 #define ErrorInfoPrint 0 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
-#define TimeInterval 1000*30*1 //Time interval for the system to trigger the bus scan process
 #define RemoteFrameID 99 //ID for the remote frames to ask for information from the slaves
+#define TimeInterval 1000*60*60 //Time interval for the system to trigger the bus scan process
 #define SlavesTurnOnDelay 5000 //Wait for the slaves to warm up and be able to send information
 #define ArrayLimit 99 //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
 #define Samplings 100
@@ -47,7 +48,7 @@ static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL ; // 125 Kb/s ESP32 Desi
 //Counter for debugging and statistics of the BUS
 uint32_t ReceivedFrameCount = 0;
 uint32_t SentFrameCount = 0;
-uint32_t samplingTimeInterval = 0;
+float samplingTimeInterval = 0;
 uint32_t samplingCounter = 0;
 uint32_t currentMessagesQueued = 0;
 //Array for Queuing the received messages
@@ -101,9 +102,9 @@ void loop () {
   remoteFrame.rtr = true;
   CANMessage frame; //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0; //Variable for the elements position in the arrays
-  digitalWrite (PIN_POWERON, HIGH);//Turn Power ON for the slaves in order to come online
-  if (samplingTimeInterval < millis ()) {
+  if (samplingTimeInterval < millis ()) { //  CHECK THIS; THIS WILL FOR SURE NOT WORK; SINCE THERE MUST A LIMIT FOR THE MILIS AND SAMPLING TIME INTERNAL VALUE....there should be a better alternative. Ich glaube nicht, dass ein Delay das wäre, einfach Jeschke fragen
     samplingTimeInterval += TimeInterval;
+    digitalWrite (PIN_POWERON, HIGH);//Turn Power ON for the slaves in order to come online
     delay(SlavesTurnOnDelay);
     //Sent remote frame to the BUS in order to get information from the Slaves
     const bool okRemoteFrame = ACAN_ESP32::can.tryToSend (remoteFrame);
@@ -132,6 +133,7 @@ void loop () {
     checkWiFi(); //Check for the WiFi connection before posting the messages
     processQueuedMessages(queuedMessages); //Once the messages has been queued, they will be send
   }
+  delay(1000);
   }
 //----------------------------------------------------------------------------------------
 //Help/Debug functions
@@ -225,18 +227,21 @@ void loop () {
       for (int i = 0; i<currentMessagesQueued;i++){
         JSONVar myObject;
         char* sensorType = "";
+        float dataCANBUS = -99.99;
         //According to the id of the CANMessage, sort the message to the corresponding sensor
         if(queuedMessages[i].id >= 0xff00){
           sensorType = "tempreture";
+          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
         }
         else if(queuedMessages[i].id <= 0xee00){
           sensorType = "humidity";
+          dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
         }
         //Set every attribute of the JSONVar
         myObject["id"] = String(queuedMessages[i].id);
         myObject["type"] = sensorType;
         myObject["time"] = timeStamps[i];
-        myObject["value"] = queuedMessages[i].data32[0]; //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
+        myObject["value"] = dataCANBUS; //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
         myObject["row"] = (long) queuedMessages[i].id;//Ask jeschke how we are gonna do this positioning
         myObject["column"] = (long) queuedMessages[i].id;
         //POST the JSON object
@@ -391,4 +396,24 @@ void loop () {
     //preferences.remove("varname");// remove varname in the namespace
     preferences.putULong(paramEEPROM, stamp);
     preferences.end();
+    }
+  //Scaling for the CANBUS temperature Data
+  float scaleCANBUStemperature(uint32_t data32){
+    //Variables for the CANBUS Data scaling
+    uint32_t maxScaling = (2<<15)-1;
+    int minScaling = 0;
+    int tempA = -100;
+    int tempB = 100;
+    float result = ((((tempB-tempA)*(float(data32)-minScaling))/(maxScaling-minScaling))+tempA);
+    return result;
+    }
+  //Scaling for the CANBUS humidity Data
+  float scaleCANBUShumidity(uint32_t data32){
+    //Variables for the CANBUS Data scaling
+    uint32_t maxScaling = (2<<15)-1;
+    int minScaling = 0;
+    int humidA = 0;
+    int humidB = 100;
+    float result = ((((humidB-humidA)*(float(data32)-minScaling))/(maxScaling-minScaling))+humidA);
+    return result;
     }
