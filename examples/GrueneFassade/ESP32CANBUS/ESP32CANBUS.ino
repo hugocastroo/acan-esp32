@@ -12,7 +12,8 @@
 %   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
-% V02:    CANBUS data scaling implementation for more precise data.
+% V12:    millis() overflow problem was solved with a second variable and using ULONG variables.
+% V11:    CANBUS data scaling implementation for more precise data.
 %	V01:			Program uploads the measurements samplings to a test
 %					BACKEND.
 %					Measurments are readed from different Raspberry Pi Pico
@@ -40,15 +41,15 @@
 #define InfoPrint 0 //Change flag to show chip and BUS settings in the serial monitor 0-1
 #define ErrorInfoPrint 0 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
 #define RemoteFrameID 99 //ID for the remote frames to ask for information from the slaves
-#define TimeInterval 1000*60*60 //Time interval for the system to trigger the bus scan process
-#define SlavesTurnOnDelay 5000 //Wait for the slaves to warm up and be able to send information
+#define SlavesTurnOnDelay 5000 // (ms) Wait for the slaves to warm up and be able to send information
 #define ArrayLimit 99 //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
 #define Samplings 100
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL ; // 125 Kb/s ESP32 Desired Bit Rate
 //Counter for debugging and statistics of the BUS
 uint32_t ReceivedFrameCount = 0;
 uint32_t SentFrameCount = 0;
-float samplingTimeInterval = 0;
+unsigned long referenzMillis = 0;
+unsigned long TimeInterval = 1000*60*60;
 uint32_t samplingCounter = 0;
 uint32_t currentMessagesQueued = 0;
 //Array for Queuing the received messages
@@ -56,8 +57,15 @@ CANMessage queuedMessages[ArrayLimit];
 String timeStamps[ArrayLimit];
 //static const char* const timeStamps[ArrayLimit]; //Check if it works, this way and if not then find a way to do not use STRING
 // Replace with network credentials
-const char* ssid = "nordisch-Box-1";
-const char* password = "87654321";
+//Zuhause
+//const char* ssid = "nordisch-Box-1";
+//const char* password = "87654321";
+//Büro
+//const char* ssid = "castro";
+//const char* password = "msnc5000";
+//Labor
+const char* ssid = "Mexicano";
+const char* password = "Mexicano";
 // NTP server to request epoch time
 const char* ntpServer = "pool.ntp.org";
 //Your Domain name with URL path or IP address with path for HTTP Posting
@@ -102,8 +110,8 @@ void loop () {
   remoteFrame.rtr = true;
   CANMessage frame; //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0; //Variable for the elements position in the arrays
-  if (samplingTimeInterval < millis ()) { //  CHECK THIS; THIS WILL FOR SURE NOT WORK; SINCE THERE MUST A LIMIT FOR THE MILIS AND SAMPLING TIME INTERNAL VALUE....there should be a better alternative. Ich glaube nicht, dass ein Delay das wäre, einfach Jeschke fragen
-    samplingTimeInterval += TimeInterval;
+  if (millis() - referenzMillis > TimeInterval) { // Overflow solution for the time problem.
+    referenzMillis = millis();
     digitalWrite (PIN_POWERON, HIGH);//Turn Power ON for the slaves in order to come online
     delay(SlavesTurnOnDelay);
     //Sent remote frame to the BUS in order to get information from the Slaves

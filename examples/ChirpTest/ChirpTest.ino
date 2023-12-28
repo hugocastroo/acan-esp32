@@ -10,6 +10,8 @@
 %                   it is not supossed to chirp when beeing in sensor mode, but
 %                   it does it anyway. I will test other sensors and then
 %                   come back to this one.
+%                   Default: GPIO22 - SCL, GPIO21 - SDA, check the PINOUT
+%                   
 %					          This Program is just a basic test script for testing the
 &					          sensor behaviour, this approach should be implemented
 &					          in a main program and/or another platform
