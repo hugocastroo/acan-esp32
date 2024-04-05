@@ -37,9 +37,9 @@
 #include <Preferences.h>  //Library for storing and reading values from the EEPROM
 //   SETUP and Variables
 #define LED_BUILTIN 2 //Change LED Position if using different board
-#define PIN_POWERON 21 //Change PIN Position if using other PIN
+#define PIN_POWERON 32 //Change PIN Position if using other PIN
 #define InfoPrint 0 //Change flag to show chip and BUS settings in the serial monitor 0-1
-#define ErrorInfoPrint 0 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
+#define ErrorInfoPrint 1 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
 #define RemoteFrameID 99 //ID for the remote frames to ask for information from the slaves
 #define SlavesTurnOnDelay 5000 // (ms) Wait for the slaves to warm up and be able to send information
 #define ArrayLimit 99 //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
@@ -49,7 +49,7 @@ static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL ; // 125 Kb/s ESP32 Desi
 uint32_t ReceivedFrameCount = 0;
 uint32_t SentFrameCount = 0;
 unsigned long referenzMillis = 0;
-unsigned long TimeInterval = 1000*60*60;
+unsigned long TimeInterval = 1000*1*1;
 uint32_t samplingCounter = 0;
 uint32_t currentMessagesQueued = 0;
 //Array for Queuing the received messages
@@ -91,8 +91,8 @@ void setup() {
   delay (1000);
   //Configure ESP32 CAN
   ACAN_ESP32_Settings settings (DESIRED_BIT_RATE);
-  settings.mRxPin = GPIO_NUM_4; // Optional, default Tx pin is GPIO_NUM_4
-  settings.mTxPin = GPIO_NUM_5; // Optional, default Rx pin is GPIO_NUM_5
+  settings.mRxPin = GPIO_NUM_27; // Optional, default Rx pin is GPIO_NUM_4
+  settings.mTxPin = GPIO_NUM_14; // Optional, default Tx pin is GPIO_NUM_5
   const uint32_t errorCode = ACAN_ESP32::can.begin (settings);
   //Display ESP32 Chip and BUS Settings Info if the InfoPrint flag is active. Possible section for further debugging
   if(InfoPrint){
