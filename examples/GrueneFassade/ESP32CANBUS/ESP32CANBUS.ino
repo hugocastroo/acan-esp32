@@ -12,6 +12,11 @@
 %   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V21:    Changes in the programm to adapt the program to the ZSE PCB
+%         -
+%         -
+%         -
+%         -
 % V12:    millis() overflow problem was solved with a second variable and using ULONG variables.
 % V11:    CANBUS data scaling implementation for more precise data.
 %	V01:			Program uploads the measurements samplings to a test
@@ -36,9 +41,9 @@
 #include <Arduino_JSON.h> //Library for working with JSON syntax in Arduino
 #include <Preferences.h>  //Library for storing and reading values from the EEPROM
 //   SETUP and Variables
-#define LED_BUILTIN 2 //Change LED Position if using different board
-#define PIN_POWERON 32 //Change PIN Position if using other PIN
-#define InfoPrint 0 //Change flag to show chip and BUS settings in the serial monitor 0-1
+//#define LED_BUILTIN 2 //Change LED Position if using different board
+//#define PIN_POWERON 32 //Change PIN Position if using other PIN
+#define InfoPrint 1 //Change flag to show chip and BUS settings in the serial monitor 0-1
 #define ErrorInfoPrint 1 //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
 #define RemoteFrameID 99 //ID for the remote frames to ask for information from the slaves
 #define SlavesTurnOnDelay 5000 // (ms) Wait for the slaves to warm up and be able to send information
@@ -60,7 +65,7 @@ String timeStamps[ArrayLimit];
 //Zuhause
 //const char* ssid = "nordisch-Box-1";
 //const char* password = "87654321";
-//Büro
+//Rechner - Büro
 //const char* ssid = "castro";
 //const char* password = "msnc5000";
 //Labor
@@ -79,20 +84,34 @@ const char* paramEEPROM = "stamp";
 //----------------------------------------------------------------------------------------
 void setup() {
   //Switch on builtin led to know that the program started
-  pinMode (LED_BUILTIN, OUTPUT);
-  digitalWrite (LED_BUILTIN, HIGH);
+  //pinMode (LED_BUILTIN, OUTPUT);
+  //digitalWrite (LED_BUILTIN, HIGH);
   //Configure the OUTPUT PIN for turning on and off the slaves. Set it OFF
-  pinMode (PIN_POWERON, OUTPUT);
-  digitalWrite (PIN_POWERON, LOW);
+  //pinMode (PIN_POWERON, OUTPUT);
+  //digitalWrite (PIN_POWERON, LOW);
   Serial.begin (115200); // Start serial 
+  Serial.println("Setup started"); //Info
   initWiFi(); // Init WiFi
   getEEPROMTimestamp(); //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
   configTime(0, 0, ntpServer); //Start NTP server connection for the UNIX TIME
   delay (1000);
   //Configure ESP32 CAN
   ACAN_ESP32_Settings settings (DESIRED_BIT_RATE);
-  settings.mRxPin = GPIO_NUM_27; // Optional, default Rx pin is GPIO_NUM_4
-  settings.mTxPin = GPIO_NUM_14; // Optional, default Tx pin is GPIO_NUM_5
+  //Original - Protoboard
+  //settings.mRxPin = GPIO_NUM_4; // Optional, default Rx pin is GPIO_NUM_4
+  //settings.mTxPin = GPIO_NUM_5; // Optional, default Tx pin is GPIO_NUM_5
+  //CANBUS1
+  settings.mRxPin = GPIO_NUM_25; // Optional, default Rx pin is GPIO_NUM_4
+  settings.mTxPin = GPIO_NUM_26; // Optional, default Tx pin is GPIO_NUM_5
+  //CANBUS2
+  //settings.mRx2Pin = GPIO_NUM_27; // Optional, default Rx pin is GPIO_NUM_4
+  //settings.mTx2Pin = GPIO_NUM_14; // Optional, default Tx pin is GPIO_NUM_5
+  //CANBUS3
+  //settings.mRx3Pin = GPIO_NUM_12; // Optional, default Rx pin is GPIO_NUM_4
+  //settings.mTx3Pin = GPIO_NUM_13; // Optional, default Tx pin is GPIO_NUM_5
+  //CANBUS4
+  //settings.mRxPin = GPIO_NUM_15; // Optional, default Rx pin is GPIO_NUM_4
+  //settings.mTxPin = GPIO_NUM_4; // Optional, default Tx pin is GPIO_NUM_5
   const uint32_t errorCode = ACAN_ESP32::can.begin (settings);
   //Display ESP32 Chip and BUS Settings Info if the InfoPrint flag is active. Possible section for further debugging
   if(InfoPrint){
@@ -100,6 +119,7 @@ void setup() {
     chipInfo(chip_info);
     busInfo(errorCode,settings);
     }
+  Serial.println("Setup done"); //Info
   }
 //----------------------------------------------------------------------------------------
 void loop () {
@@ -110,9 +130,10 @@ void loop () {
   remoteFrame.rtr = true;
   CANMessage frame; //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0; //Variable for the elements position in the arrays
+  Serial.println("Frames configuration done"); //Info
   if (millis() - referenzMillis > TimeInterval) { // Overflow solution for the time problem.
     referenzMillis = millis();
-    digitalWrite (PIN_POWERON, HIGH);//Turn Power ON for the slaves in order to come online
+    //digitalWrite (PIN_POWERON, HIGH);//Turn Power ON for the slaves in order to come online
     delay(SlavesTurnOnDelay);
     //Sent remote frame to the BUS in order to get information from the Slaves
     const bool okRemoteFrame = ACAN_ESP32::can.tryToSend (remoteFrame);
@@ -137,7 +158,7 @@ void loop () {
       samplingCounter += 1;
       delay(100); //Check how small this can get
     }
-    digitalWrite (PIN_POWERON, LOW);//Turn Power off for the slaves in order to spare energy
+    //digitalWrite (PIN_POWERON, LOW);//Turn Power off for the slaves in order to spare energy
     checkWiFi(); //Check for the WiFi connection before posting the messages
     processQueuedMessages(queuedMessages); //Once the messages has been queued, they will be send
   }
@@ -192,9 +213,9 @@ void loop () {
     else {
       Serial.print ("Configuration error 0x");
       Serial.println (errorCode, HEX);
-      digitalWrite (LED_BUILTIN, LOW);
+      //digitalWrite (LED_BUILTIN, LOW);
       delay(250);
-      digitalWrite (LED_BUILTIN, HIGH);
+      //digitalWrite (LED_BUILTIN, HIGH);
     }
     }
   //Statics information of the BUS will be displayed in the serial monitor
