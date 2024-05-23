@@ -9,21 +9,31 @@
 %					This Program is just a basic test script for testing the
 &					sensor behaviour, this approach should be implemented
 &					in a main program and/or another platform
-%   Date:           06/12/2023      
+%   Date:           06/12/2023
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
-%	V01:			Adress of the sensor was acquired using this script.
+%             Date:     30/04/2024
+%             V02:      Changing the I2C pins for testing the ZSE Leitterplatte
+%             Date:     06/12/2023
+%	            V01:			Adress of the sensor was acquired using this script.
 %	
 %  
 % 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
 //Needed libraries
 #include <Wire.h> //Library needed for the I2C communication protocol
+#define I2C_SDA 33
+#define I2C_SCL 32
+#define PIN_IOEXPANDER 16 //Change PIN Position if using other PIN
  
 void setup() {
-  Wire.begin();
+  
+  //Wire.begin(); //For default PINS - SDA (default is GPIO 21), SCL (default is GPIO 22) 
+  Wire.begin(I2C_SDA, I2C_SCL); //For ZSE Test procedure to implement it in the main programm
   Serial.begin(115200);
   Serial.println("\nI2C Scanner");
+  pinMode (PIN_IOEXPANDER, OUTPUT);
+  digitalWrite (PIN_IOEXPANDER, HIGH);
 }
  
 void loop() {
