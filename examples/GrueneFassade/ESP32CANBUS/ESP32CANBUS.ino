@@ -53,12 +53,15 @@
 #define I2C_SCL 32                  //SCL GPIO PIN für die I2C Kommunikation
 //Delays
 #define I2CDelay 10             //Delay für die I2C Befehle
-#define SlavesTurnOnDelay 5000  // (ms) Wait for the slaves to warm up and be able to send information
+#define SlavesTurnOnDelay 3000  // (ms) Wait for the slaves to warm up and be able to send information
+#define wateringDelay 10000
 //Misc.
-#define RemoteFrameID 99      //ID for the remote frames to ask for information from the slaves
-#define findSlavesFrameID 69  //ID for the findSlaves frame to start the find slaves process
+#define infoFrameID 90        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
+#define findSlavesFrameID 91  //ID for the findSlaves frame to start the find slaves process    DEC 91 - HEX 5B
+#define requestFrameID 92     //ID for the findSlaves frame to start the find slaves process		DEC 92 - HEX 5C
 #define ArrayLimit 99         //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
-#define Samplings 100
+#define Samplings 100         //Number of samplings that should be done in order to scan for CANBUS messages
+#define humidityTreshold 30   //Treshold for the humidity to start the ventils or not.
 
 //Flags
 bool InfoPrint = false;       //Change flag to show chip and BUS settings in the serial monitor 0-1
@@ -67,6 +70,7 @@ bool findFlag = false;        //Find Flag for running the find method to find al
 bool PCAL6408AFlag = false;   //Flag for the PCAL IC Loop, the flag is rewritten with the checkForI2CDevices method after establishing communication with the IC
 bool CLOCKFlag = false;       //Flag for the CLOCK IC
 bool nextSlaveFlag = false;   //Flag for a new found slave that should be added to the matrix
+bool wateringFlag = false;    //Flag for the system to know if it is needed to trigger and extra delay in order to wait for the channel to finish watering
 
 //Declaration of the variables
 //Internet access // Replace with network credentials
@@ -99,7 +103,7 @@ String timeStamps[ArrayLimit];                            //Array for storing th
 //Counter for debugging and statistics of the BUS
 uint32_t ReceivedFrameCount = 0;  //Counter for the received frames  from the slavesin the CANBUS line
 uint32_t SentFrameCount = 0;      //Counter for the sent frames from the Master in the CANBUS line
-const uint32_t maxSlavesInLine = 10;
+const uint32_t maxSlavesInLine = 3;
 uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for storing the matrix of the system pots
 
 // NTP SERVER - API variables
@@ -120,10 +124,9 @@ void setup() {
   pinMode(PIN_IOEXPANDERINTERRUPT, INPUT);  //Set the PIN for the PCAL6408A as INPUT
   digitalWrite(PIN_IOEXPANDER, HIGH);       //Set the PIN for the PCAL6408A HIGH, IF THIS IS NOT DONE; IT WILL NOT COMMUNICATE.
   Serial.begin(115200);                     // Start serial in case it is desired to debug or display any information
-  //Serial.println("Setup started");  //Info
-  initWiFi();                   // Init WiFi
-  getEEPROMTimestamp();         //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
-  configTime(0, 0, ntpServer);  //Start NTP server connection for the UNIX TIME
+  initWiFi();                               // Init WiFi
+  getEEPROMTimestamp();                     //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
+  configTime(0, 0, ntpServer);              //Start NTP server connection for the UNIX TIME
   delay(100);
   //Display ESP32 Chip and BUS Settings Info if the InfoPrint flag is active. Possible section for further debugging
   if (InfoPrint) {
@@ -133,63 +136,64 @@ void setup() {
   //Start the I2C line on the ESP32 for the Clock and I/O expander
   Wire.begin(I2C_SDA, I2C_SCL);  //Begin the I2C transmition with the desired PINs
   delay(I2CDelay);
-  //If the PCAL6408AFlag then the INPUTs will be checked for setting the right SW Version and the find funktion of the system.
+  //If the PCAL6408AFlag then the INPUTs will be checked for the find function of the system.
   PCAL6408AFlag = checkForI2CDevices(ADDRESS_PCAL6408A);  //Scan for the PCAL6408A IC and proof communication
   if (PCAL6408AFlag) {
     readFindFlag();
     if (findFlag) {
       findSlaves();  //Call the findSlaves method and store the information in the ESP32 RAM for future starts
     } else {         //Read the Pflanfgefäße Matrix from the EEPROM
-      //readSlavesMatrix();
+      readSlavesMatrix();
     }
   } else {  //Read the Pflanfgefäße Matrix from the EEPROM
-    //readSlavesMatrix();
+    readSlavesMatrix();
   }
   Serial.println("Setup done");  //Info
 }
 //----------------------------------------------------------------------------------------
 void loop() {
   //CANMessages initialization
-  CANMessage remoteFrame;  //Message for requesting data from the slaves
-  remoteFrame.ext = false;
-  remoteFrame.id = RemoteFrameID;
-  remoteFrame.rtr = true;
+  CANMessage infoFrame;  //Message for requesting data from the slaves
+  infoFrame.ext = false;
+  infoFrame.id = infoFrameID;
+  infoFrame.rtr = true;
   CANMessage frame;                                //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0;                              //Variable for the elements position in the arrays
   Serial.println("Frames configuration done");     //Info
   if (millis() - referenzMillis > TimeInterval) {  // Overflow solution for the time problem.
     referenzMillis = millis();
-    //If the PCAL6408AFlag then all different channels will be turned on respectively
-    if (PCAL6408AFlag) {
-      //For loop for starting the four different outputs in the Konfiguration array
-      for (int i = 0; i < CANBUSlines; i++) {
-        AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);            //Turn the desired output ON/OFF
-        delay(SlavesTurnOnDelay);                                           //Wait for the slaves to start
-        // const uint32_t errorCodeCANBUS = startCANBUSline(i);                //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
-        // const bool okRemoteFrame = ACAN_ESP32::can.tryToSend(remoteFrame);  //Sent remote frame to the BUS in order to get information from the Slaves
-        // if (okRemoteFrame) {
-        //   SentFrameCount += 1;
-        //   samplingCounter = 0;
-        //   arrayIndex = 0;
-        //   currentMessagesQueued = 0;
-        //   //Serial.print("Remote message sent succ. \n"); //Check if the message was sent succ.
-        // }
-        // displayBUSstatistics();                 //If flag ErrorInfoPrint is active, then statics information will be displayed in the serial monitor
-        // while (samplingCounter <= Samplings) {  //Sample for a certain time for the slave's answers
-        //   if (ACAN_ESP32::can.receive(frame)) {
-        //     queuedMessages[arrayIndex] = frame;  //Add the received frames to a Queue in order to process them later
-        //     timeStamps[arrayIndex] = getTime();
-        //     ReceivedFrameCount += 1;
-        //     arrayIndex += 1;
-        //     currentMessagesQueued = arrayIndex;
-        //     //framePrinting(frame); //Print the data of the received frames if desired
-        //   }
-        //   samplingCounter += 1;
-        //   delay(100);  //Check how small this can get
-        // }
-        // checkWiFi();                               //Check for the WiFi connection before posting the messages
-        // processQueuedMessages(queuedMessages, i);  //Once the messages has been queued, they will be send
-        // delay(5000);
+    if (PCAL6408AFlag) {                                                //If the PCAL6408AFlag then all different channels will be turned on respectively
+      for (int i = 0; i < CANBUSlines; i++) {                           //For loop for starting the four different outputs in the Konfiguration array
+        AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);        //Turn the desired output ON/OFF
+        delay(SlavesTurnOnDelay);                                       //Wait for the slaves to start
+        const uint32_t errorCodeCANBUS = startCANBUSline(i);            //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+        const bool okinfoFrame = ACAN_ESP32::can.tryToSend(infoFrame);  //Sent remote frame to the BUS in order to get information from the Slaves
+        if (okinfoFrame) {                                              //If the message was sent, then set the counters or increment them.
+          SentFrameCount += 1;
+          samplingCounter = 0;
+          arrayIndex = 0;
+          currentMessagesQueued = 0;
+          //Serial.print("Remote message sent succ. \n"); //Check if the message was sent succ.
+        }
+        displayBUSstatistics();                 //If flag ErrorInfoPrint is active, then statics information will be displayed in the serial monitor
+        while (samplingCounter <= Samplings) {  //Sample for a certain time for the slave's answers
+          if (ACAN_ESP32::can.receive(frame)) {
+            queuedMessages[arrayIndex] = frame;  //Add the received frames to a Queue in order to process them later
+            timeStamps[arrayIndex] = getTime();
+            ReceivedFrameCount += 1;
+            arrayIndex += 1;
+            currentMessagesQueued = arrayIndex;
+            //framePrinting(frame); //Print the data of the received frames if desired
+          }
+          samplingCounter += 1;
+          delay(30);  //Check how small this can get
+        }
+        checkWiFi();                               //Check for the WiFi connection before posting the messages
+        processQueuedMessages(queuedMessages, i);  //Once the messages has been queued, they will be send
+        if (wateringFlag) {                        //If the flag was set while processing the queuedMessages, then wait for the valves to close, before shutting down the slaves.
+          delay(wateringDelay);
+          wateringFlag = false;  //Set the wateringFlag to false for the next cycle.
+        }
       }
     } else {
       //Brauchen wir nix machen, weil der IC nicht da ist, und die Kanäle nicht mit Strom versorgt werden können
@@ -290,24 +294,34 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       JSONVar myObject;
       char* sensorType = "";
       float dataCANBUS = -99.99;
-      //According to the id of the CANMessage, sort the message to the corresponding sensor
-      if (queuedMessages[i].id >= 0xff00) {
-        sensorType = "tempreture";
-        dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
-      } else if (queuedMessages[i].id <= 0xee00) {
-        sensorType = "humidity";
-        dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
+      //According to the id of the CANMessage, sort the message to the corresponding sensor 0xXX01 is humidity sensor, 0xXX02 is temperature sensor. XX is the Slave ID and should be different for every slave.
+      int currentID = queuedMessages[i].id & 0B11111111;  //Take just the 8  first LSB, since the other bits are the Slave ID
+      switch (currentID) {
+        case 1:
+          sensorType = "humidity";
+          dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
+          break;
+        case 2:
+          sensorType = "tempreture";
+          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
+          break;
+        default:
+          sensorType = "humidity";
+          dataCANBUS = 99;
+          break;
       }
       //Set every attribute of the JSONVar
       myObject["id"] = String(queuedMessages[i].id);
       myObject["type"] = sensorType;
       myObject["time"] = timeStamps[i];
       myObject["value"] = dataCANBUS;                          //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
-      myObject["row"] = row;                                   //Ask jeschke how we are gonna do this positioning
+      myObject["row"] = row + 1;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
       int column = getSlaveColumn(row, queuedMessages[i].id);  //Method for getting the column of the device, according to the frame.id
       myObject["column"] = column;
-      //POST the JSON object
-      int response = httpPOSTRequest(serverName, myObject);
+      int response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
+      if (dataCANBUS < humidityTreshold) {
+        wateringFlag = true;
+      }
       //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
       //Serial.println(response); //Print the response code if desired
     }
@@ -575,55 +589,45 @@ bool checkForI2CDevices(byte address) {
 }
 //Method for finding the different slaves on the line, the 4 ON/OFF outputs of the IC Expander should be switched, as well as the CANBUS lines, in order to communicate with the devices.
 void findSlaves() {
-  Serial.println("Starting find slaves");  //Info
+  Serial.println("Starting find slaves");                     //Info
   for (int i = 0; i < CANBUSlines; i++) {                     //Loop for starting the 4 different channels
-    Serial.println("Turning on slave");  //Info
     AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
-    Serial.println("Slave was turned on");  //Info
-    delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start
-    // const uint32_t errorCodeCANBUS = startCANBUSline(i);      //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
-    // CANMessage findSlavesFrame;                               //Frame configuration for the find process from the slaves
-    // findSlavesFrame.ext = false;
-    // findSlavesFrame.id = findSlavesFrameID;
-    // findSlavesFrame.rtr = true;
-    // for (int j = 0; j < maxSlavesInLine; j++) {                                   //Loop for doing the process as many times as maxSlavesInLine, since the slaves are turned on, one by one.
-    //   const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
-    //   CANMessage findSlavesAnswer;                                                //No initialization needed, since the message will be read from the slaves
-    //   while (samplingCounter <= Samplings) {                                      //Sample for a certain time for the slave's answers
-    //     if (ACAN_ESP32::can.receive(findSlavesAnswer)) {                          //If got reponse from the slave then process the information
-    //       int tempArray[maxSlavesInLine] = { 0 };                                 //Initialize array to store the current values of the current row i-CANBUSlines
-    //       for (int k = 0; k < maxSlavesInLine; k++) {
-    //         tempArray[k] = potsMatrix[i][k];  //Store the current row i-CANBUSlines in the temp array.
-    //       }
-    //       nextSlaveFlag = valueInArray(findSlavesAnswer.id >> 8, tempArray, maxSlavesInLine);  //Check if the id of the received message is contained int the temp array or not
-    //       if (nextSlaveFlag) {                                                                 //If the id of the received message is new, then store the id in the potsMatrix array
-    //         potsMatrix[i][j] = findSlavesAnswer.id >> 8;                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
-    //         samplingCounter = 100;                                                             //Set the counter to 100, since a new element was added and we can start again.
-    //       }
-    //     }
-    //     samplingCounter += 1;  //Increment the counter to get out of the loop after Samplings is over. This is actually not needed, but it helps to avoid to stay in this while inc ase something goes wrong.
-    //     delay(100);            //Check how small this can get
-    //   }
-    //   delay(SlavesTurnOnDelay);  //Once a message was received, wait for the next device to start. Then start all over again.
-    // }
+    const uint32_t errorCodeCANBUS = startCANBUSline(i);      //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+    CANMessage findSlavesFrame;                               //Frame configuration for the find process from the slaves
+    findSlavesFrame.ext = false;
+    findSlavesFrame.id = findSlavesFrameID;
+    findSlavesFrame.rtr = true;
+    for (int j = 0; j < maxSlavesInLine; j++) {                                   //Loop for doing the process as many times as maxSlavesInLine, since the slaves are turned on, one by one.
+      delay(SlavesTurnOnDelay);                                                   //Wait for the slaves to start, around three seconds should be fine, if not then 5 seconds
+      CANMessage findSlavesAnswer;                                                //No initialization needed, since the message will be read from the slaves
+      const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
+      while (samplingCounter <= Samplings) {                                      //Sample for a certain time for the slave's answers
+        if (ACAN_ESP32::can.receive(findSlavesAnswer)) {                          //If got reponse from the slave then process the information
+          int tempArray[maxSlavesInLine] = { 0 };                                 //Initialize array to store the current values of the current row i-CANBUSlines
+          for (int k = 0; k < maxSlavesInLine; k++) {
+            tempArray[k] = potsMatrix[i][k];  //Store the current row i-CANBUSlines in the temp array.
+          }
+          nextSlaveFlag = valueInArray(findSlavesAnswer.id >> 8, tempArray, maxSlavesInLine);  //Check if the id of the received message is contained int the temp array or not
+          if (nextSlaveFlag) {                                                                 //If the id of the received message is new, then store the id in the potsMatrix array
+            potsMatrix[i][j] = findSlavesAnswer.id >> 8;                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
+            Serial.println(potsMatrix[i][j]);                                                  //Info
+            samplingCounter = 101;                                                             //Set the counter to 100, since a new element was added and we can start again.
+          }
+        }
+        samplingCounter += 1;  //Increment the counter to get out of the loop after Samplings is over. This is actually not needed, but it helps to avoid to stay in this while inc ase something goes wrong.
+        delay(30);             //Check how small this can get, depeneding on the CANBUS lenght and number of devices.
+      }
+    }
   }
-  Serial.println("trying to write on eeprom");  //Info
-  // for (int m = 0; m < CANBUSlines; m++) {  //Loop for starting the 4 different channels
-  //   char buffer[20];
-  //   Serial.println("generating buffer");  //Info
-  //   sprintf(buffer, "%02d%02d%02d%02d%02d%02d%02d%02d%02d%02d", potsMatrix[m][0], potsMatrix[m][1], potsMatrix[m][2], potsMatrix[m][3], potsMatrix[m][4], potsMatrix[m][5], potsMatrix[m][6], potsMatrix[m][7], potsMatrix[m][8], potsMatrix[m][9]);  //Der potsMatrix[i][j] muss nach dem Vorgang in den EEPROM gespeichert werden
-  //   Serial.println("buffer generated");  //Info
-  //   unsigned long long bufferint = atoll(buffer);
-  //   Serial.println("buffer converted");  //Info
-  //   CANBUSValues[m] = bufferint;                       //Store the buffer in the matrix
-  //   Serial.println("buffer set");  //Info
-  //   preferences.begin(CANBUSdata, false);              //init preference to overwrite EEPROM values with the new matrix
-  //   Serial.println("write the keys in the eepprom");  //Info
-  //   preferences.putULong64(CANBUSKeys[m], bufferint);  // Write the parameter with the following value.
-  //   Serial.println("written");  //Info
-  //   preferences.end();
-  //   Serial.println("preferences were closed");  //Info
-  // }
+  for (int m = 0; m < CANBUSlines; m++) {  //Loop for writing the matrix configuration in the ESP32 EEPROM
+    char buffer[21];
+    sprintf(buffer, "%02d%02d%02d%02d%02d%02d%02d%02d%02d%02d", potsMatrix[m][0], potsMatrix[m][1], potsMatrix[m][2], potsMatrix[m][3], potsMatrix[m][4], potsMatrix[m][5], potsMatrix[m][6], potsMatrix[m][7], potsMatrix[m][8], potsMatrix[m][9]);  //Der potsMatrix[i][j] muss nach dem Vorgang in den EEPROM gespeichert werden
+    unsigned long long bufferint = atoll(buffer);
+    //CANBUSValues[m] = bufferint;                       //Store the buffer in the matrix
+    preferences.begin(CANBUSdata, false);              //init preference to overwrite EEPROM values with the new matrix
+    preferences.putULong64(CANBUSKeys[m], bufferint);  // Write the parameter with the following value.
+    preferences.end();
+  }
 }
 //Method for reading the matrix configuration from the EEPROM memory and storing it in the potsMatrix[][]
 void readSlavesMatrix() {
@@ -631,13 +635,14 @@ void readSlavesMatrix() {
     preferences.begin(CANBUSdata, false);                                 //init preference to overwrite EEPROM values with the new matrix
     unsigned long long value = preferences.getULong64(CANBUSKeys[m], 0);  // Write the parameter with the following value.
     preferences.end();
-    CANBUSValues[m] = value;  //Store the buffer in the CANBUS EEPROM variable
-    char buffer[20];
+    Serial.println(value);  //Info
+    //CANBUSValues[m] = value;  //Store the buffer in the CANBUS EEPROM variable
+    char buffer[21];
     sprintf(buffer, "%llu", value);  //Get the readed value from the EEPROM into string to divide it and store it in the matrix.
     for (int n = 0; n < maxSlavesInLine; n++) {
       char minibuffer[2];
-      sprintf(minibuffer, "%s%s", buffer[n * 2], buffer[(n * 2) + 1]);  //Get the readed value from the EEPROM into string to divide it and store it in the matrix.
-      potsMatrix[m][n] = atoi(minibuffer);                              //Convert the string to int and store it in the matrix.
+      sprintf(minibuffer, "%c%c", buffer[n * 2], buffer[n * 2 + 1]);  //Get the readed value from the EEPROM into string to divide it and store it in the matrix.
+      potsMatrix[m][n] = atoi(minibuffer);                            //Convert the string to int and store it in the matrix.
     }
   }
 }
@@ -698,7 +703,7 @@ int getSlaveColumn(int row, int slaveID) {
   int generalID = slaveID >> 8;  //nur die zwei linke Bytes vom ID berücksichtigen
   for (int j = 0; j < maxSlavesInLine; j++) {
     if (generalID == potsMatrix[row][j]) {
-      return j + 1;
+      return j + 1;  //Return the column + 1 since it starts in 0
     }
   }
   return 99;
