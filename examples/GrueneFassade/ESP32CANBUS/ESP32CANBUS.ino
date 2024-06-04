@@ -92,8 +92,8 @@ unsigned char Konfiguration[] = { 0x7F, 0xBF };      //PCAL6408A configuration a
 const uint32_t CANBUSlines = sizeof(Konfiguration);  //Count of the different CANBUS lines/states that should be turned on
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
-unsigned long referenzMillis = 1000 * 60 * 1;             //Counter for the time loop
-unsigned long TimeInterval = 1000 * 40 * 1;               //Time that should elapse between every loop
+unsigned long referenzMillis = 0;             //Counter for the time loop
+unsigned long TimeInterval = 1000 * 60 * 60;               //Time that should elapse between every loop
 uint32_t currentMessagesQueued = 0;                       //Counter for the queued messages in the array before processing them
 CANMessage queuedMessages[ArrayLimit];                    //Array for Queuing the received messages
 String timeStamps[ArrayLimit];                            //Array for storing the timestamp of every CANBUS message when they are received.
@@ -321,10 +321,10 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       if (dataCANBUS < humidityTreshold) {
         wateringFlag = true;
       }
-      Serial.print("Row: ");
-      Serial.print(row + 1);
-      Serial.print(" Column: ");
-      Serial.println(column);
+      // Serial.print("Row: ");
+      // Serial.print(row + 1);
+      // Serial.print(" Column: ");
+      // Serial.println(column);
       //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
       //Serial.println(response); //Print the response code if desired
     }
