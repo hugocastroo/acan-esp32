@@ -20,6 +20,7 @@
 %         -Add the identifier for the row and column in the processquededmessages method for the system to sort out where the pots are located
 %         -Add the <ModbusMaster.h> library and configuration needed for the RSMAX485 - weather station Adapter.
 %         -Reorganize the gettime Method and the timestamp logic.
+%         -Testing the code with the first slaves, was succesfull
 %
 % V12:    millis() overflow problem was solved with a second variable and using ULONG variables.
 % V11:    CANBUS data scaling implementation for more precise data.
@@ -48,27 +49,27 @@
 #include <ModbusMaster.h>  //Library for the MODBUS 485 IC in order to communicate with the Weather station
 //Setup-Global Variables
 //Pins
-#define PIN_IOEXPANDER 16           //GPIO PIN für die RESET PIN_IOEXPANDER, es muss HIGH sein, sonst startet der IC sich die ganze Zeit neu und kommuniziert nicht.
-#define I2C_SDA 33                  //SDA GPIO PIN für die I2C Kommunikation
-#define I2C_SCL 32                  //SCL GPIO PIN für die I2C Kommunikation
-#define MAX485_DE_RE 16             //Pin for toggling the MAX485 Board //PIN_IOEXPANDER muss gelöscht werden, bei der nächsten Platine.
-#define MAX485_RX 18                //Pin for the RX communication RO RS485MAX
-#define MAX485_TX 19                //Pin for the TX communication DI RS485MAX
+#define PIN_IOEXPANDER 16  //GPIO PIN für die RESET PIN_IOEXPANDER, es muss HIGH sein, sonst startet der IC sich die ganze Zeit neu und kommuniziert nicht.
+#define I2C_SDA 33         //SDA GPIO PIN für die I2C Kommunikation
+#define I2C_SCL 32         //SCL GPIO PIN für die I2C Kommunikation
+#define MAX485_DE_RE 16    //Pin for toggling the MAX485 Board //PIN_IOEXPANDER muss gelöscht werden, bei der nächsten Platine.
+#define MAX485_RX 18       //Pin for the RX communication RO RS485MAX
+#define MAX485_TX 19       //Pin for the TX communication DI RS485MAX
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
 #define SlavesTurnOnDelay 2000  // (ms) Wait for the slaves to warm up and be able to send information
 #define wateringDelay 10000     //Delay in ms for waiting for the valve to water the pot
-#define overflowTimer 7000     //Delay in ms for the overflow while looking for new slaves.
+#define overflowTimer 4000      //Delay in ms for the overflow while looking for new slaves.
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
 int findSlavesFrameID = 91;  //ID for the findSlaves frame to start the find slaves process    DEC 91 - HEX 5B
 int requestFrameID = 92;     //ID for the findSlaves frame to start the find slaves process		DEC 92 - HEX 5C
-#define ArrayLimit 99         //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
-#define Samplings 100         //Number of samplings that should be done in order to scan for CANBUS messages
-#define humidityTreshold 30   //Treshold for the humidity to start the ventils or not.
+#define ArrayLimit 99        //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
+#define Samplings 100        //Number of samplings that should be done in order to scan for CANBUS messages
+#define humidityTreshold 30  //Treshold for the humidity to start the ventils or not.
 //Flags
 bool InfoPrint = false;            //Change flag to show chip and BUS settings in the serial monitor 0-1
-bool ErrorInfoPrint = true;       //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
+bool ErrorInfoPrint = true;        //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
 bool findFlag = false;             //Find Flag for running the find method to find all the CAN devices in the line. Matrix principle
 bool PCAL6408AFlag = false;        //Flag for the PCAL IC Loop, the flag is rewritten with the checkForI2CDevices method after establishing communication with the IC
 bool CLOCKFlag = false;            //Flag for the CLOCK IC
@@ -84,16 +85,15 @@ bool weatherStationFlag = false;   //Flag for knowing if data from the weather s
 const char* ssid = "Mexicano";
 const char* password = "Mexicano";
 //I2C Parameters
-int ADDRESS_PCF8523T = 104;                                  //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
-int ADDRESS_PCAL6408A = 32;                                  //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
-unsigned char PCAL6408ARegister = 0x03;                      //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
-unsigned char Konfiguration[] = { 0x7F, 0xBF, 0xDF, 0xEF };  //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
-const uint32_t CANBUSlines = sizeof(Konfiguration);          //Count of the different CANBUS lines/states that should be turned on
+int ADDRESS_PCF8523T = 104;                          //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
+int ADDRESS_PCAL6408A = 32;                          //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
+unsigned char PCAL6408ARegister = 0x03;              //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
+unsigned char Konfiguration[] = { 0x7F, 0xBF };      //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
+const uint32_t CANBUSlines = sizeof(Konfiguration);  //Count of the different CANBUS lines/states that should be turned on
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
-unsigned long referenzMillis = 1000 * 60 * 59;                         //Counter for the time loop
-unsigned long TimeInterval = 1000 * 60 * 60;                //Time that should elapse between every loop
-uint32_t samplingCounter = 10000;                             //Counter for sampling the CANBUS line, this is needed in case that no message is received
+unsigned long referenzMillis = 1000 * 60 * 1;             //Counter for the time loop
+unsigned long TimeInterval = 1000 * 40 * 1;               //Time that should elapse between every loop
 uint32_t currentMessagesQueued = 0;                       //Counter for the queued messages in the array before processing them
 CANMessage queuedMessages[ArrayLimit];                    //Array for Queuing the received messages
 String timeStamps[ArrayLimit];                            //Array for storing the timestamp of every CANBUS message when they are received.
@@ -101,7 +101,7 @@ String timeStamps[ArrayLimit];                            //Array for storing th
 //Counter for debugging and statistics of the BUS
 uint32_t ReceivedFrameCount = 0;  //Counter for the received frames  from the slavesin the CANBUS line
 uint32_t SentFrameCount = 0;      //Counter for the sent frames from the Master in the CANBUS line
-const uint32_t maxSlavesInLine = 2;
+const uint32_t maxSlavesInLine = 5;
 uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for storing the matrix of the system pots
 //Weather station variables
 float weatherStationHumidity = 0;
@@ -111,7 +111,6 @@ ModbusMaster node;  //object node for class ModbusMaster
 // NTP SERVER - API variables
 const char* ntpServer = "pool.ntp.org";                                                                         //NTP server for getting the time online
 const char* serverName = "https://europe-west1-gruenfacade.cloudfunctions.net/app/api/facade/test/sensordata";  //Your Domain name with URL path or IP address with path for HTTP Posting
-//JSONVar jsonElements; //Used in an old programm, probably not needed anymore.
 Preferences preferences;                //Variables and instances for the EEPROM rewrite/read procedure
 const char* spaceEEPROM = "timestamp";  //variable for the EEPROM procedure
 const char* paramEEPROM = "stamp";      //variable for the EEPROM procedure
@@ -121,12 +120,12 @@ unsigned long long CANBUSValues[] = { 0, 0, 0, 0 };
 
 void setup() {
   //Configure the OUTPUT PINs and signals for the board to work properly
-  pinMode(PIN_IOEXPANDER, OUTPUT);          //Set the PIN for the PCAL6408A as OUTPUT
-  digitalWrite(PIN_IOEXPANDER, HIGH);       //Set the PIN for the PCAL6408A HIGH, IF THIS IS NOT DONE; IT WILL NOT COMMUNICATE.
-  Serial.begin(115200);                     // Start serial in case it is desired to debug or display any information
-  initWiFi();                               // Init WiFi
-  getEEPROMTimestamp();                     //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
-  configTime(0, 0, ntpServer);              //Start NTP server connection for the UNIX TIME
+  pinMode(PIN_IOEXPANDER, OUTPUT);     //Set the PIN for the PCAL6408A as OUTPUT
+  digitalWrite(PIN_IOEXPANDER, HIGH);  //Set the PIN for the PCAL6408A HIGH, IF THIS IS NOT DONE; IT WILL NOT COMMUNICATE.
+  Serial.begin(115200);                // Start serial in case it is desired to debug or display any information
+  initWiFi();                          // Init WiFi
+  getEEPROMTimestamp();                //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
+  configTime(0, 0, ntpServer);         //Start NTP server connection for the UNIX TIME
   delay(100);
   //Display ESP32 Chip and BUS Settings Info if the InfoPrint flag is active. Possible section for further debugging
   if (InfoPrint) {
@@ -136,7 +135,7 @@ void setup() {
   //Start the I2C line on the ESP32 for the Clock and I/O expander
   Wire.begin(I2C_SDA, I2C_SCL);  //Begin the I2C transmition with the desired PINs
   delay(I2CDelay);
-  //weatherStationSetUp(); //Configure RS485 Modbus channel for the weather station 
+  //weatherStationSetUp(); //Configure RS485 Modbus channel for the weather station
   //If the PCAL6408AFlag then the INPUTs will be checked for the find function of the system.
   PCAL6408AFlag = checkForI2CDevices(ADDRESS_PCAL6408A);  //Scan for the PCAL6408A IC and proof communication
   if (PCAL6408AFlag) {
@@ -160,29 +159,20 @@ void loop() {
   CANMessage frame;                                //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0;                              //Variable for the elements position in the arrays
   if (millis() - referenzMillis > TimeInterval) {  // Overflow solution for the time problem.
-      Serial.println("Time to sample");     //Info
+    Serial.println("Time to sample");              //Info
     referenzMillis = millis();
-    if (PCAL6408AFlag) {                                                //If the PCAL6408AFlag then all different channels will be turned on respectively
-      for (int i = 0; i < CANBUSlines; i++) {                           //For loop for starting the four different outputs in the Konfiguration array
-        AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);        //Turn the desired output ON/OFF
-        Serial.println("Turned slaves on");     //Info
-        delay(SlavesTurnOnDelay);                                       //Wait for the slaves to start
-        const uint32_t errorCodeCANBUS = startCANBUSline(i+1);            //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
-        // ACAN_ESP32_Settings settings(DESIRED_BIT_RATE);
-        // Serial.println("Turning on channel 1\n");     //Info
-        // settings.mRxPin = GPIO_NUM_25;  // Optional, default Rx pin is GPIO_NUM_4
-        // settings.mTxPin = GPIO_NUM_26;  // Optional, default Tx pin is GPIO_NUM_5
-        //const uint32_t errorCode = ACAN_ESP32::can.begin(settings);
-        delay(1000);
+    if (PCAL6408AFlag) {                                          //If the PCAL6408AFlag then all different channels will be turned on respectively
+      for (int i = 0; i < CANBUSlines; i++) {                     //For loop for starting the four different outputs in the Konfiguration array
+        AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
+        const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+        delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start
+        arrayIndex = 0;
+        currentMessagesQueued = 0;
         for (int j = 0; j < maxSlavesInLine; j++) {
           const bool okinfoFrame = ACAN_ESP32::can.tryToSend(infoFrame);  //Sent remote frame to the BUS in order to get information from the Slaves
           if (okinfoFrame) {                                              //If the message was sent, then set the counters or increment them.
             SentFrameCount += 1;
-            samplingCounter = 0;
-            arrayIndex = 0;
-            currentMessagesQueued = 0;
-            //Serial.print("Remote message sent succ. \n"); //Check if the message was sent succ.
-            delay(10);
+            delay(20);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
             while (ACAN_ESP32::can.receive(frame)) {
               queuedMessages[arrayIndex] = frame;  //Add the received frames to a Queue in order to process them later
               timeStamps[arrayIndex] = getTime();
@@ -190,28 +180,25 @@ void loop() {
               arrayIndex += 1;
               currentMessagesQueued = arrayIndex;
               //framePrinting(frame); //Print the data of the received frames if desired
-              Serial.print(frame.id,HEX);
-              Serial.print(", "); 
+              Serial.print(frame.id, HEX);
+              Serial.print(", ");
             }
           }
         }
         Serial.print("\n");
-        displayBUSstatistics();                 //If flag ErrorInfoPrint is active, then statics information will be displayed in the serial monitor
+        displayBUSstatistics();                    //If flag ErrorInfoPrint is active, then statics information will be displayed in the serial monitor
         checkWiFi();                               //Check for the WiFi connection before posting the messages
         Serial.println("Processing the data");     //Info
         processQueuedMessages(queuedMessages, i);  //Once the messages has been queued, they will be send
-        Serial.println("Data processed");     //Info
+        Serial.println("Data processed");          //Info
         if (wateringFlag) {                        //If the flag was set while processing the queuedMessages, then wait for the valves to close, before shutting down the slaves.
+          Serial.println("Watering");              //Info
           delay(wateringDelay);
-          Serial.println("Watering");  //Info
-          wateringFlag = false;        //Set the wateringFlag to false for the next cycle.
+          wateringFlag = false;  //Set the wateringFlag to false for the next cycle.
         }
+        AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the cycle.
       }
-      AusgangEinschalten(ADDRESS_PCAL6408A, 0xff); //Shut all channels down after the loop.
-    } else {
-      //Brauchen wir nix machen, weil der IC nicht da ist, und die Kanäle nicht mit Strom versorgt werden können
     }
-    Serial.println("See you in 5 Min");     //Info
   }
   delay(1000);
 }
@@ -334,6 +321,10 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       if (dataCANBUS < humidityTreshold) {
         wateringFlag = true;
       }
+      Serial.print("Row: ");
+      Serial.print(row + 1);
+      Serial.print(" Column: ");
+      Serial.println(column);
       //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
       //Serial.println(response); //Print the response code if desired
     }
@@ -447,9 +438,9 @@ String getTime() {
     getEEPROMTimestamp();                                                                                           //Set the time before reading it, according to the clock IC if available, if not then from the EEPROM
     sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", year(), month(), day(), hour(), minute(), second());  //Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
     return (timestamp);
-  } else {  //If it was possible to get the information from the NTP server, then use this information and store it in the EEPROM and sync the IC Clock Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
-    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + 1, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
-    setTime(timeinfo.tm_hour + 1, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
+  } else {                                                                                                                                                                              //If it was possible to get the information from the NTP server, then use this information and store it in the EEPROM and sync the IC Clock Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
+    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + 2, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
+    setTime(timeinfo.tm_hour + 2, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
     CLOCKFlag = checkForI2CDevices(ADDRESS_PCF8523T);                                                                                                                                   ////Scan for the Clock IC and proof communication
     if (CLOCKFlag) {                                                                                                                                                                    //If flag is active, the the time from the clock should be overwritten
       //register call
@@ -601,28 +592,28 @@ void findSlaves() {
   Serial.println("Starting find slaves");                     //Info
   for (int i = 0; i < CANBUSlines; i++) {                     //Loop for starting the 4 different channels
     AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
-    const uint32_t errorCodeCANBUS = startCANBUSline(i+1);      //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+    const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+    delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start, around two seconds should be fine, if not then 5 seconds
     CANMessage findSlavesFrame;                               //Frame configuration for the find process from the slaves
     findSlavesFrame.ext = false;
     findSlavesFrame.id = findSlavesFrameID;
-    findSlavesFrame.rtr = false;
+    findSlavesFrame.rtr = true;
     for (int j = 0; j < maxSlavesInLine; j++) {  //Loop for doing the process as many times as maxSlavesInLine, since the slaves are turned on, one by one.
       int overflow = 0;
       findMessageReceived = false;
-      delay(SlavesTurnOnDelay);                                                   //Wait for the slaves to start, around three seconds should be fine, if not then 5 seconds
-      CANMessage findSlavesAnswer;                                                //No initialization needed, since the message will be read from the slaves
-      const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
-      if (okfindSlavesFrame) {        
-        Serial.print("Find frame succesfully sent. \n"); //Check if the message was sent succ.
+      CANMessage findSlavesAnswer;  //No initialization needed, since the message will be read from the slaves
+      for (int m = 0; m < maxSlavesInLine; m++) {
+        const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
+        delay(10);
       }
-      while (!findMessageReceived) {                                              //Wait for an answer
-        if (ACAN_ESP32::can.receive(findSlavesAnswer)) {                          //If got reponse from the slave then process the information
-          int tempArray[maxSlavesInLine] = { 0 };                                 //Initialize array to store the current values of the current row i-CANBUSlines
+      while (!findMessageReceived) {                      //Wait for an answer
+        if (ACAN_ESP32::can.receive(findSlavesAnswer)) {  //If got reponse from the slave then process the information
+          int tempArray[maxSlavesInLine] = { 0 };         //Initialize array to store the current values of the current row i-CANBUSlines
           for (int k = 0; k < maxSlavesInLine; k++) {
             tempArray[k] = potsMatrix[i][k];  //Store the current row i-CANBUSlines in the temp array.
           }
           nextSlaveFlag = valueInArray(findSlavesAnswer.id >> 8, tempArray, maxSlavesInLine);  //Check if the id of the received message is contained int the temp array or not
-          if (nextSlaveFlag) {                                                                 //If the id of the received message is new, then store the id in the potsMatrix array
+          if (!nextSlaveFlag) {                                                                //If the id of the received message is new, then store the id in the potsMatrix array
             potsMatrix[i][j] = findSlavesAnswer.id >> 8;                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
             Serial.println(potsMatrix[i][j]);                                                  //Info
           } else {
@@ -631,13 +622,13 @@ void findSlaves() {
           findMessageReceived = true;
         } else if (overflow > overflowTimer) {
           findMessageReceived = true;
-          potsMatrix[i][j] = 11;                        //error address for the slaves
-          Serial.println("Overflow, restarting flag");  //Info
+          potsMatrix[i][j] = 11;  //error address for the slaves
         }
         overflow += 1;
         delay(1);
       }
     }
+    AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the loop.
   }
   for (int m = 0; m < CANBUSlines; m++) {  //Loop for writing the matrix configuration in the ESP32 EEPROM
     char miniBuffer[2];
@@ -699,27 +690,27 @@ void readFindFlag() {
 //Method for starting one of the CANBUS channels 1-4
 int startCANBUSline(int numberCANBUS) {
   ACAN_ESP32_Settings settings(DESIRED_BIT_RATE);
-  Serial.println(numberCANBUS);     //Info
-  switch (numberCANBUS) {             //Accordung to numberCANBUS switch the correct CANBUS line.
-    case 1:                           //CANBUS1 configuration pins for the different channels
-    Serial.println("Turning on channel 1");     //Info
-      settings.mRxPin = GPIO_NUM_25;  // Optional, default Rx pin is GPIO_NUM_4
-      settings.mTxPin = GPIO_NUM_26;  // Optional, default Tx pin is GPIO_NUM_5
+  Serial.println(numberCANBUS);                //Info
+  switch (numberCANBUS) {                      //Accordung to numberCANBUS switch the correct CANBUS line.
+    case 1:                                    //CANBUS1 configuration pins for the different channels
+      Serial.println("Turning on channel 1");  //Info
+      settings.mRxPin = GPIO_NUM_25;           // Optional, default Rx pin is GPIO_NUM_4
+      settings.mTxPin = GPIO_NUM_26;           // Optional, default Tx pin is GPIO_NUM_5
       break;
-    case 2:                           //CANBUS2
-    Serial.println("Turning on channel 2");     //Info
-      settings.mRxPin = GPIO_NUM_27;  // Optional, default Rx pin is GPIO_NUM_4
-      settings.mTxPin = GPIO_NUM_14;  // Optional, default Tx pin is GPIO_NUM_5
+    case 2:                                    //CANBUS2
+      Serial.println("Turning on channel 2");  //Info
+      settings.mRxPin = GPIO_NUM_27;           // Optional, default Rx pin is GPIO_NUM_4
+      settings.mTxPin = GPIO_NUM_14;           // Optional, default Tx pin is GPIO_NUM_5
       break;
-    case 3:                           //CANBUS3
-    Serial.println("Turning on channel 3");     //Info
-      settings.mRxPin = GPIO_NUM_12;  // Optional, default Rx pin is GPIO_NUM_4
-      settings.mTxPin = GPIO_NUM_13;  // Optional, default Tx pin is GPIO_NUM_5
+    case 3:                                    //CANBUS3
+      Serial.println("Turning on channel 3");  //Info
+      settings.mRxPin = GPIO_NUM_12;           // Optional, default Rx pin is GPIO_NUM_4
+      settings.mTxPin = GPIO_NUM_13;           // Optional, default Tx pin is GPIO_NUM_5
       break;
-    case 4:                           //CANBUS4
-    Serial.println("Turning on channel 4");     //Info
-      settings.mRxPin = GPIO_NUM_15;  // Optional, default Rx pin is GPIO_NUM_4
-      settings.mTxPin = GPIO_NUM_4;   // Optional, default Tx pin is GPIO_NUM_5
+    case 4:                                    //CANBUS4
+      Serial.println("Turning on channel 4");  //Info
+      settings.mRxPin = GPIO_NUM_15;           // Optional, default Rx pin is GPIO_NUM_4
+      settings.mTxPin = GPIO_NUM_4;            // Optional, default Tx pin is GPIO_NUM_5
       break;
   }
   const uint32_t errorCode = ACAN_ESP32::can.begin(settings);
