@@ -49,7 +49,7 @@
 #include <ModbusMaster.h>  //Library for the MODBUS 485 IC in order to communicate with the Weather station
 //Setup-Global Variables
 //Pins
-#define PIN_IOEXPANDER 16  //GPIO PIN für die RESET PIN_IOEXPANDER, es muss HIGH sein, sonst startet der IC sich die ganze Zeit neu und kommuniziert nicht.
+//#define PIN_IOEXPANDER 16  //GPIO PIN für die RESET PIN_IOEXPANDER, es muss HIGH sein, sonst startet der IC sich die ganze Zeit neu und kommuniziert nicht.
 #define I2C_SDA 33         //SDA GPIO PIN für die I2C Kommunikation
 #define I2C_SCL 32         //SCL GPIO PIN für die I2C Kommunikation
 #define MAX485_DE_RE 16    //Pin for toggling the MAX485 Board //PIN_IOEXPANDER muss gelöscht werden, bei der nächsten Platine.
@@ -92,7 +92,7 @@ unsigned char Konfiguration[] = { 0x7F, 0xBF };      //PCAL6408A configuration a
 const uint32_t CANBUSlines = sizeof(Konfiguration);  //Count of the different CANBUS lines/states that should be turned on
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
-unsigned long referenzMillis = 0;             //Counter for the time loop
+unsigned long referenzMillis = 1000 * 60 * 59;             //Counter for the time loop
 unsigned long TimeInterval = 1000 * 60 * 60;               //Time that should elapse between every loop
 uint32_t currentMessagesQueued = 0;                       //Counter for the queued messages in the array before processing them
 CANMessage queuedMessages[ArrayLimit];                    //Array for Queuing the received messages
@@ -120,8 +120,8 @@ unsigned long long CANBUSValues[] = { 0, 0, 0, 0 };
 
 void setup() {
   //Configure the OUTPUT PINs and signals for the board to work properly
-  pinMode(PIN_IOEXPANDER, OUTPUT);     //Set the PIN for the PCAL6408A as OUTPUT
-  digitalWrite(PIN_IOEXPANDER, HIGH);  //Set the PIN for the PCAL6408A HIGH, IF THIS IS NOT DONE; IT WILL NOT COMMUNICATE.
+  //pinMode(PIN_IOEXPANDER, OUTPUT);     //Set the PIN for the PCAL6408A as OUTPUT
+  //digitalWrite(PIN_IOEXPANDER, HIGH);  //Set the PIN for the PCAL6408A HIGH, IF THIS IS NOT DONE; IT WILL NOT COMMUNICATE.
   Serial.begin(115200);                // Start serial in case it is desired to debug or display any information
   initWiFi();                          // Init WiFi
   getEEPROMTimestamp();                //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
@@ -298,7 +298,9 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       switch (currentID) {
         case 1:
           sensorType = "humidity";
+          Serial.println(queuedMessages[i].data32[0]);
           dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
+          Serial.println(dataCANBUS);
           break;
         case 2:
           sensorType = "tempreture";
@@ -321,6 +323,17 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       if (dataCANBUS < humidityTreshold) {
         wateringFlag = true;
       }
+      if(response == 200){
+        Serial.println("posted");
+      }
+      else{
+        while(response != 200){
+          response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
+          Serial.print(" trying to post ");
+          Serial.print(response);
+        }
+      }
+
       // Serial.print("Row: ");
       // Serial.print(row + 1);
       // Serial.print(" Column: ");
@@ -330,7 +343,7 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
     }
   } else {
     checkWiFi();  //Check for the WiFi connection before posting the messages
-    //Serial.println("WiFi Disconnected");
+    Serial.println("WiFi Disconnected");
   }
   //Before finishing this method, the information from the weather station should be gather and posted also in the backend. We will need new variables and parameters in the backend to acomplish this.
   // weatherStationFlag = weatherStationGetData();
@@ -472,7 +485,7 @@ void initWiFi() {
 void checkWiFi() {
   //Try to connect if the WL_CONNECTED is false
   if (WiFi.status() != WL_CONNECTED) {
-    //Serial.println("Not connected, Trying to connect");
+    Serial.println("Not connected, Trying to connect");
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
     delay(2000);
