@@ -57,9 +57,9 @@
 #define MAX485_TX 19       //Pin for the TX communication DI RS485MAX
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
-#define SlavesTurnOnDelay 2000  // (ms) Wait for the slaves to warm up and be able to send information
+#define SlavesTurnOnDelay 1000  // (ms) Wait for the slaves to warm up and be able to send information
 #define wateringDelay 10000     //Delay in ms for waiting for the valve to water the pot
-#define overflowTimer 4000      //Delay in ms for the overflow while looking for new slaves.
+#define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
 int findSlavesFrameID = 91;  //ID for the findSlaves frame to start the find slaves process    DEC 91 - HEX 5B
@@ -78,12 +78,12 @@ bool wateringFlag = false;         //Flag for the system to know if it is needed
 bool findMessageReceived = false;  //Flag for identifing when a find message was received and stop scaning for a message
 bool weatherStationFlag = false;   //Flag for knowing if data from the weather station was received or not
 //Internet access // Replace with network credentials
-//const char* ssid = "nordisch-Box-1";
-//const char* password = "87654321";
+const char* ssid = "nordisch-Box-1";
+const char* password = "87654321";
 //const char* ssid = "castro";
 //const char* password = "msnc5000";
-const char* ssid = "Mexicano";
-const char* password = "Mexicano";
+//const char* ssid = "Mexicano";
+//const char* password = "Mexicano";
 //I2C Parameters
 int ADDRESS_PCF8523T = 104;                          //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
 int ADDRESS_PCAL6408A = 32;                          //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
@@ -101,7 +101,7 @@ String timeStamps[ArrayLimit];                            //Array for storing th
 //Counter for debugging and statistics of the BUS
 uint32_t ReceivedFrameCount = 0;  //Counter for the received frames  from the slavesin the CANBUS line
 uint32_t SentFrameCount = 0;      //Counter for the sent frames from the Master in the CANBUS line
-const uint32_t maxSlavesInLine = 5;
+const uint32_t maxSlavesInLine = 3;
 uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for storing the matrix of the system pots
 //Weather station variables
 float weatherStationHumidity = 0;
@@ -180,7 +180,8 @@ void loop() {
               arrayIndex += 1;
               currentMessagesQueued = arrayIndex;
               //framePrinting(frame); //Print the data of the received frames if desired
-              Serial.print(frame.id, HEX);
+              //Serial.print(frame.id, HEX);
+              Serial.print(frame.data32[0]);
               Serial.print(", ");
             }
           }
@@ -197,6 +198,7 @@ void loop() {
           wateringFlag = false;  //Set the wateringFlag to false for the next cycle.
         }
         AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the cycle.
+        Serial.println("Finished the cycle");              //Info
       }
     }
   }
@@ -290,21 +292,37 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
   if (WiFi.status() == WL_CONNECTED) {
     //Initialize the JSON object from the queuedMessages Array
     for (int i = 0; i < currentMessagesQueued; i++) {
+      Serial.print("Message ");
+      Serial.print(i);
+      Serial.print(" has id ");
+      Serial.print(queuedMessages[i].id,HEX);
+      Serial.print(" and data:  ");
+      Serial.println(queuedMessages[i].data32[0]);
+    }
+    for (int i = 0; i < currentMessagesQueued; i++) {
       JSONVar myObject;
       char* sensorType = "";
       float dataCANBUS = -99.99;
       //According to the id of the CANMessage, sort the message to the corresponding sensor 0xXX01 is humidity sensor, 0xXX02 is temperature sensor. XX is the Slave ID and should be different for every slave.
       int currentID = queuedMessages[i].id & 0B11111111;  //Take just the 8  first LSB, since the other bits are the Slave ID
       switch (currentID) {
+        Serial.print("Current ID ");
+        Serial.println(currentID);
         case 1:
-          sensorType = "humidity";
+          sensorType = "tempreture";
           Serial.println(queuedMessages[i].data32[0]);
-          dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
+          Serial.println("Hex: ");
+          Serial.println(queuedMessages[i].data32[0],HEX);
+          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
+          Serial.print("Temperature: ");
           Serial.println(dataCANBUS);
           break;
         case 2:
-          sensorType = "tempreture";
-          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
+          sensorType = "humidity";
+          Serial.println(queuedMessages[i].data32[0]);
+          dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
+          Serial.print("Humidity: ");
+          Serial.println(dataCANBUS);
           break;
         default:
           sensorType = "humidity";
@@ -327,11 +345,11 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
         Serial.println("posted");
       }
       else{
-        while(response != 200){
-          response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
-          Serial.print(" trying to post ");
-          Serial.print(response);
-        }
+        //while(response != 200){
+          //response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
+          Serial.print("Not posted error code: ");
+          Serial.println(response);
+        //}
       }
 
       // Serial.print("Row: ");
@@ -485,12 +503,13 @@ void initWiFi() {
 void checkWiFi() {
   //Try to connect if the WL_CONNECTED is false
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Not connected, Trying to connect");
+    Serial.println("WiFi not connected, Trying to connect");
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
     delay(2000);
   } else {
     //WiFi was already connected
+    Serial.println("WiFi connected");
   }
   //Serial.println(WiFi.localIP()); //Show the IP address of the ESP32 Modul if needed
 }
@@ -563,20 +582,20 @@ void overwriteEEPROMTimestamp(long stamp) {
 //Scaling for the CANBUS temperature Data
 float scaleCANBUStemperature(uint32_t data32) {
   //Variables for the CANBUS Data scaling
-  uint32_t maxScaling = (2 << 15) - 1;
-  int minScaling = 0;
-  int tempA = -100;
-  int tempB = 100;
+  float maxScaling = (2 << 14) - 1;
+  float minScaling = 0.0;
+  float tempA = -100.0;
+  float tempB = 100.0;
   float result = ((((tempB - tempA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + tempA);
   return result;
 }
 //Scaling for the CANBUS humidity Data
 float scaleCANBUShumidity(uint32_t data32) {
   //Variables for the CANBUS Data scaling
-  uint32_t maxScaling = (2 << 15) - 1;
-  int minScaling = 0;
-  int humidA = 0;
-  int humidB = 100;
+  float maxScaling = (2 << 14) - 1;
+  float minScaling = 0.0;
+  float humidA = 0.0;
+  float humidB = 100.0;
   float result = ((((humidB - humidA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + humidA);
   return result;
 }
@@ -617,7 +636,8 @@ void findSlaves() {
       CANMessage findSlavesAnswer;  //No initialization needed, since the message will be read from the slaves
       for (int m = 0; m < maxSlavesInLine; m++) {
         const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
-        delay(10);
+        Serial.println("CAN message was sent");                     //Info
+        delay(30);
       }
       while (!findMessageReceived) {                      //Wait for an answer
         if (ACAN_ESP32::can.receive(findSlavesAnswer)) {  //If got reponse from the slave then process the information
