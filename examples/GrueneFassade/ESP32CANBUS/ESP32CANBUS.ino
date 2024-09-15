@@ -180,8 +180,7 @@ void loop() {
               arrayIndex += 1;
               currentMessagesQueued = arrayIndex;
               //framePrinting(frame); //Print the data of the received frames if desired
-              //Serial.print(frame.id, HEX);
-              Serial.print(frame.data32[0]);
+              Serial.print(frame.id, HEX);
               Serial.print(", ");
             }
           }
@@ -292,34 +291,20 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
   if (WiFi.status() == WL_CONNECTED) {
     //Initialize the JSON object from the queuedMessages Array
     for (int i = 0; i < currentMessagesQueued; i++) {
-      Serial.print("Message ");
-      Serial.print(i);
-      Serial.print(" has id ");
-      Serial.print(queuedMessages[i].id,HEX);
-      Serial.print(" and data:  ");
-      Serial.println(queuedMessages[i].data32[0]);
-    }
-    for (int i = 0; i < currentMessagesQueued; i++) {
       JSONVar myObject;
       char* sensorType = "";
       float dataCANBUS = -99.99;
       //According to the id of the CANMessage, sort the message to the corresponding sensor 0xXX01 is humidity sensor, 0xXX02 is temperature sensor. XX is the Slave ID and should be different for every slave.
       int currentID = queuedMessages[i].id & 0B11111111;  //Take just the 8  first LSB, since the other bits are the Slave ID
       switch (currentID) {
-        Serial.print("Current ID ");
-        Serial.println(currentID);
         case 1:
           sensorType = "tempreture";
-          Serial.println(queuedMessages[i].data32[0]);
-          Serial.println("Hex: ");
-          Serial.println(queuedMessages[i].data32[0],HEX);
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print("Temperature: ");
           Serial.println(dataCANBUS);
           break;
         case 2:
           sensorType = "humidity";
-          Serial.println(queuedMessages[i].data32[0]);
           dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
           Serial.print("Humidity: ");
           Serial.println(dataCANBUS);
