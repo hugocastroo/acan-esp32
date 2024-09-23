@@ -172,7 +172,7 @@ void loop() {
           const bool okinfoFrame = ACAN_ESP32::can.tryToSend(infoFrame);  //Sent remote frame to the BUS in order to get information from the Slaves
           if (okinfoFrame) {                                              //If the message was sent, then set the counters or increment them.
             SentFrameCount += 1;
-            delay(20);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
+            delay(500);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
             while (ACAN_ESP32::can.receive(frame)) {
               queuedMessages[arrayIndex] = frame;  //Add the received frames to a Queue in order to process them later
               timeStamps[arrayIndex] = getTime();
