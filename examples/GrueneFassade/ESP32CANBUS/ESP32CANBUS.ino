@@ -58,7 +58,7 @@
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
 #define SlavesTurnOnDelay 1000  // (ms) Wait for the slaves to warm up and be able to send information
-#define wateringDelay 10000     //Delay in ms for waiting for the valve to water the pot
+#define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
 #define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
@@ -298,17 +298,23 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       int currentID = queuedMessages[i].id & 0B11111111;  //Take just the 8  first LSB, since the other bits are the Slave ID
       switch (currentID) {
         case 1:
-          sensorType = "tempreture";
-          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
-          Serial.print("Temperature: ");
-          Serial.println(dataCANBUS);
-          break;
-        case 2:
           sensorType = "humidity";
           dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
           Serial.print("Humidity: ");
           Serial.println(dataCANBUS);
-          break;
+        break;
+        case 2:
+          sensorType = "tempreture";
+          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
+          Serial.print("Temperature: ");
+          Serial.println(dataCANBUS);
+        break;
+        case 3:
+          sensorType = "internTempreture";
+          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
+          Serial.print("internTemperature: ");
+          Serial.println(dataCANBUS);
+        break;
         default:
           sensorType = "humidity";
           dataCANBUS = 99;
@@ -569,8 +575,8 @@ float scaleCANBUStemperature(uint32_t data32) {
   //Variables for the CANBUS Data scaling
   float maxScaling = (2 << 14) - 1;
   float minScaling = 0.0;
-  float tempA = -100.0;
-  float tempB = 100.0;
+  float tempA = 0.0;  //Check if these values are correct or not, before it was apparently working with -100 and 100
+  float tempB = 150.0; //Check if these values would work for the extern and intern temperature sensor or just with one sensor
   float result = ((((tempB - tempA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + tempA);
   return result;
 }
