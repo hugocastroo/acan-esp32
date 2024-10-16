@@ -78,12 +78,12 @@ bool wateringFlag = false;         //Flag for the system to know if it is needed
 bool findMessageReceived = false;  //Flag for identifing when a find message was received and stop scaning for a message
 bool weatherStationFlag = false;   //Flag for knowing if data from the weather station was received or not
 //Internet access // Replace with network credentials
-const char* ssid = "nordisch-Box-1";
-const char* password = "87654321";
+//const char* ssid = "nordisch-Box-1";
+//const char* password = "87654321";
 //const char* ssid = "castro";
 //const char* password = "msnc5000";
-//const char* ssid = "Mexicano";
-//const char* password = "Mexicano";
+const char* ssid = "Mexicano";
+const char* password = "Mexicano";
 //I2C Parameters
 int ADDRESS_PCF8523T = 104;                          //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
 int ADDRESS_PCAL6408A = 32;                          //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
@@ -103,10 +103,6 @@ uint32_t ReceivedFrameCount = 0;  //Counter for the received frames  from the sl
 uint32_t SentFrameCount = 0;      //Counter for the sent frames from the Master in the CANBUS line
 const uint32_t maxSlavesInLine = 3;
 uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for storing the matrix of the system pots
-//Weather station variables
-float weatherStationHumidity = 0;
-float weatherStationTemperature = 0;
-int weatherStationLux = 0;
 ModbusMaster node;  //object node for class ModbusMaster
 // NTP SERVER - API variables
 const char* ntpServer = "pool.ntp.org";                                                                         //NTP server for getting the time online
@@ -172,7 +168,7 @@ void loop() {
           const bool okinfoFrame = ACAN_ESP32::can.tryToSend(infoFrame);  //Sent remote frame to the BUS in order to get information from the Slaves
           if (okinfoFrame) {                                              //If the message was sent, then set the counters or increment them.
             SentFrameCount += 1;
-            delay(500);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
+            delay(1000);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
             while (ACAN_ESP32::can.receive(frame)) {
               queuedMessages[arrayIndex] = frame;  //Add the received frames to a Queue in order to process them later
               timeStamps[arrayIndex] = getTime();
@@ -315,6 +311,12 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
           Serial.print("internTemperature: ");
           Serial.println(dataCANBUS);
         break;
+        case 4:
+          sensorType = "oneWireTemp";
+          dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
+          Serial.print("oneWireTemperature: ");
+          Serial.println(dataCANBUS);
+        break;
         default:
           sensorType = "humidity";
           dataCANBUS = 99;
@@ -354,28 +356,6 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
     checkWiFi();  //Check for the WiFi connection before posting the messages
     Serial.println("WiFi Disconnected");
   }
-  //Before finishing this method, the information from the weather station should be gather and posted also in the backend. We will need new variables and parameters in the backend to acomplish this.
-  // weatherStationFlag = weatherStationGetData();
-  // if (weatherStationFlag) {  //Ask Jeschke and Robert which variables will be used and after the variables are set in the backend, then I can upload them. For now, this will be uncommented.
-  //   // JSONVar myObject;
-  //   // char* sensorType = "humidityWS";
-  //   // float dataWS = weatherStationHumidity;
-  //   // //Set every attribute of the JSONVar
-  //   // myObject["id"] = 10;
-  //   // myObject["type"] = sensorType;
-  //   // myObject["time"] = getTime();
-  //   // myObject["value"] = dataWS;
-  //   // int response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
-  //   Serial.print("Humidity: ");
-  //   Serial.print(weatherStationHumidity);
-  //   Serial.println("%");
-  //   Serial.print("Temp: ");
-  //   Serial.print(weatherStationTemperature);
-  //   Serial.println("°C");
-  //   Serial.print("Illuminance: ");
-  //   Serial.print(weatherStationLux);
-  //   Serial.println("Lux");
-  // }
 }
 //Send a GETRequest to the server to check for availability
 int httpGETRequest(const char* serverName) {
@@ -575,7 +555,7 @@ float scaleCANBUStemperature(uint32_t data32) {
   //Variables for the CANBUS Data scaling
   float maxScaling = (2 << 14) - 1;
   float minScaling = 0.0;
-  float tempA = 0.0;  //Check if these values are correct or not, before it was apparently working with -100 and 100
+  float tempA = -50.0;  //Check if these values are correct or not, before it was apparently working with -100 and 100
   float tempB = 150.0; //Check if these values would work for the extern and intern temperature sensor or just with one sensor
   float result = ((((tempB - tempA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + tempA);
   return result;
@@ -753,43 +733,4 @@ int getSlaveColumn(int row, int slaveID) {
     }
   }
   return 99;
-}
-//Method for the set up of the weather station configuration
-void weatherStationSetUp() {
-  pinMode(MAX485_DE_RE, OUTPUT);                          //Set the MAX485_DE_RE as output
-  digitalWrite(MAX485_DE_RE, LOW);                        //Set the MAX485_DE_RE low
-  Serial1.begin(4800, SERIAL_8N1, MAX485_RX, MAX485_TX);  // Transmission mode: MODBUS-RTU, Baud rate: 4800bps, Data bits: 8, Stop bit: 1, Check bit: no
-  node.begin(1, Serial1);                                 // The weather station has a default communication baudrate of 4800 bps and 0x01 address.
-  node.preTransmission(preTransmission);                  //Set the transmision values to default
-  node.postTransmission(postTransmission);
-}
-//Method for starting the transmition when getting information from the weather station
-void preTransmission() {
-  digitalWrite(MAX485_DE_RE, HIGH);
-}
-//Method for finishing the transmition when getting information from the weather station
-void postTransmission() {
-  digitalWrite(MAX485_DE_RE, LOW);
-}
-//Method for reading the values from the sensors in the weather station and storing them in the global values.
-bool weatherStationGetData() {
-  // The 03H Register Code Example: Read The Atmospheric Humidity, Temperature & Illuminance
-  // Host Scan Order (Slave addr:0x01): 0x01 0x03 0x00 0x00 0x00 0x07 0x04 0x08 (Check the sensor documentation for further commands.)
-  // Slave Response: 0x01 0x03 0x0E 0x01 0xCB 0x00 0xC0 0x00 0x74 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x74 0x5F 0x78
-  // Address of the first register Lo bytes is 00
-  // Number of registers of Lo bytes is 03
-  uint8_t result = node.readHoldingRegisters(0, 3);
-  delay(100);
-  //Printing the information in the console/procesing of the information
-  if (result == node.ku8MBSuccess) {  //If the Message was received, then store the values in the corresponding variables
-    weatherStationHumidity = node.getResponseBuffer(0) / 10.0;
-    weatherStationTemperature = node.getResponseBuffer(1) / 10.0;
-    weatherStationLux = node.getResponseBuffer(2);
-    return true;
-  } else {  //If no data received, set the weather station flag to error.
-    weatherStationHumidity = 0;
-    weatherStationTemperature = 0;
-    weatherStationLux = 0;
-    return false;
-  }
 }
