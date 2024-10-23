@@ -41,14 +41,11 @@
 bool weatherStationFlag = false;   //Flag for knowing if data from the weather station was received or not
 bool InfoPrint = false;
 //Internet access // Replace with network credentials
-//const char* ssid = "nordisch-Box-1";
-//const char* password = "87654321";
-//const char* ssid = "castro";
-//const char* password = "msnc5000";
+//const char* ssid = "ShellyPro1-EC626091346C";
+//const char* password = "Demonstrator";
 const char* ssid = "Mexicano";
 const char* password = "Mexicano";
 
-String timeStamps[10];                            //Array for storing the timestamp of every CANBUS message when they are received.
 
 //Weather station variables
 float weatherStationHumidity = 0;
@@ -57,10 +54,13 @@ int weatherStationLux = 0;
 ModbusMaster node;  //object node for class ModbusMaster
 // NTP SERVER - API variables
 const char* ntpServer = "pool.ntp.org";                                                                         //NTP server for getting the time online
-const char* serverName = "https://europe-west1-gruenfacade.cloudfunctions.net/app/api/facade/test/sensordata";  //Your Domain name with URL path or IP address with path for HTTP Posting
+const char* serverName = "https://gruenfacade.web.app/api/facade";  //Your Domain name with URL path or IP address with path for HTTP Posting
+const char* facadeID = "demonstrator";  //Id for the facade,  this plays a role for the backend
 Preferences preferences;                //Variables and instances for the EEPROM rewrite/read procedure
 const char* spaceEEPROM = "timestamp";  //variable for the EEPROM procedure
 const char* paramEEPROM = "stamp";      //variable for the EEPROM procedure
+
+String timeStamp = "";
 
 void setup() {
   Serial.begin(115200);                // Start serial in case it is desired to debug or display any information
@@ -77,9 +77,10 @@ void setup() {
   Serial.println("Setup done");  //Info
 }
 void loop() {
-
+  delay(1000*30);
   //Main Program
   weatherStationFlag = weatherStationGetData();
+  timeStamp = getTime();
   if (weatherStationFlag) {  
     Serial.print("Humidity: ");
     Serial.print(weatherStationHumidity);
@@ -92,7 +93,7 @@ void loop() {
     Serial.println("Lux");
     processDataWeatherstation();
     Serial.println("All information posted");
-    delay(1000*60);
+    delay(1000*60*5);
   }
   else{
 
@@ -120,64 +121,111 @@ void chipInfo(esp_chip_info_t chip_info) {
 void processDataWeatherstation() {
   if (WiFi.status() == WL_CONNECTED) {
     //Initialize the JSON object for the humidity package
+    //Post the sensor's information and the position in the first FRONTEND
     JSONVar myObject;
     char* sensorType = "weatherStationHumidity";
     float dataWS = weatherStationHumidity;
     //Set every attribute of the JSONVar
-    myObject["id"] = 101;
+    myObject["id"] = "39173";
     myObject["type"] = sensorType;
-    myObject["time"] = getTime();
-    myObject["value"] = dataWS;
-    int response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
+    myObject["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+    myObject["y"] = 1;
+    myObject["z"] = 0;
+    int response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
     if(response == 200){
       Serial.println("posted");
     }
     else{
       // while(response != 200){
-      //   Serial.print("Not posted Trying to post it again: ");
-      //   response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
-      //   Serial.println(response);
+         Serial.print("Not posted Trying to post it again: ");
+         Serial.println(response);
       // }
     }
-    //Initialize the JSON object for the temperature package
+    //Post the timestamp and value in the second FRONTEND
+    String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39173/measurement";
     JSONVar myObject1;
-    sensorType = "weatherStationTemperature";
-    dataWS = weatherStationTemperature;
-    //Set every attribute of the JSONVar
-    myObject["id"] = 102;
-    myObject["type"] = sensorType;
-    myObject["time"] = getTime();
-    myObject["value"] = dataWS;
-    response = httpPOSTRequest(serverName, myObject1);  //POST the JSON object
+    myObject1["time"] = timeStamp;
+    myObject1["value"] = weatherStationHumidity;
+    response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted");
+      Serial.println("posted in the second backend");
+      //Serial.println(response);
     }
     else{
-      // while(response != 200){
-      //   Serial.print("Not posted Trying to post it again: ");
-      //   response = httpPOSTRequest(serverName, myObject1);  //POST the JSON object
-      //   Serial.println(response);
-      // }
+        Serial.print("Not posted, error code: ");
+        Serial.println(response);
     }
-    //Initialize the JSON object for the illuminance package
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //Initialize the JSON object for the humidity package
+    //Post the sensor's information and the position in the first FRONTEND
     JSONVar myObject2;
-    sensorType = "weatherStationLux";
-    dataWS = weatherStationLux;
+    sensorType = "weatherStationTemperature";
     //Set every attribute of the JSONVar
-    myObject["id"] = 103;
-    myObject["type"] = sensorType;
-    myObject["time"] = getTime();
-    myObject["value"] = dataWS;
-    response = httpPOSTRequest(serverName, myObject2);  //POST the JSON object
+    myObject2["id"] = "39174";
+    myObject2["type"] = sensorType;
+    myObject2["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+    myObject2["y"] = 1;
+    myObject2["z"] = 0;
+    response = httpPOSTRequest(serverName, myObject2,0);  //POST the JSON object
     if(response == 200){
       Serial.println("posted");
     }
     else{
       // while(response != 200){
-      //   Serial.print("Not posted Trying to post it again: ");
-      //   response = httpPOSTRequest(serverName, myObject2);  //POST the JSON object
-      //   Serial.println(response);
+         Serial.print("Not posted Trying to post it again: ");
+         Serial.println(response);
       // }
+    }
+    //Post the timestamp and value in the second FRONTEND
+    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39174/measurement";
+    JSONVar myObject3;
+    myObject3["time"] = timeStamp;
+    myObject3["value"] = weatherStationTemperature;
+    response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
+    if(response == 200){
+      Serial.println("posted in the second backend");
+      //Serial.println(response);
+    }
+    else{
+        Serial.print("Not posted, error code: ");
+        Serial.println(response);
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //Initialize the JSON object for the humidity package
+    //Post the sensor's information and the position in the first FRONTEND
+    JSONVar myObject4;
+    sensorType = "weatherStationLux";
+    //Set every attribute of the JSONVar
+    myObject4["id"] = "39175";
+    myObject4["type"] = sensorType;
+    myObject4["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+    myObject4["y"] = 1;
+    myObject4["z"] = 0;
+    response = httpPOSTRequest(serverName, myObject4,0);  //POST the JSON object
+    if(response == 200){
+      Serial.println("posted");
+    }
+    else{
+      // while(response != 200){
+         Serial.print("Not posted Trying to post it again: ");
+         Serial.println(response);
+      // }
+    }
+    //Post the timestamp and value in the second FRONTEND
+    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39175/measurement";
+    JSONVar myObject5;
+    myObject5["time"] = timeStamp;
+    myObject5["value"] = weatherStationLux;
+    response = httpPOSTRequest(serverName1.c_str(), myObject5,1);  //POST the JSON object
+    if(response == 200){
+      Serial.println("posted in the second backend");
+      //Serial.println(response);
+    }
+    else{
+        Serial.print("Not posted, error code: ");
+        Serial.println(response);
     }
   }
   else {
@@ -231,7 +279,7 @@ int httpGETRequest(const char* serverName) {
   return httpResponseCode;
 }
 //Post a message in the server
-int httpPOSTRequest(const char* serverName, JSONVar myObject) {
+int httpPOSTRequest(const char* serverName, JSONVar myObject,int backend) {
   //Get the JSON elements descriptions in case it is necessary to create a new object.
   //jsonElements = httpGETRequest(serverName);
   // Your Domain name with URL path or IP address with path
@@ -247,7 +295,14 @@ int httpPOSTRequest(const char* serverName, JSONVar myObject) {
     // If you need an HTTP request with a content type: application/json, use the following:
     http.addHeader("Content-Type", "application/json");
     //httpResponseCode = http.POST("{ \"sensordata\":[ { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 }, { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 } ] }");
-    String json = "{ \"sensordata\":[" + JSON.stringify(myObject) + "]}";
+    //String json = "{ \"sensordata\":[" + JSON.stringify(myObject) + "]}"; Altes String für den alten Backend
+    String json = "";
+    if(backend == 1){
+      json = JSON.stringify(myObject);
+    }
+    else{
+      json = "{\"id\":\"" + String(facadeID) + "\", \"sensors\":[" + JSON.stringify(myObject) + "]}"; //Falls dimensions noch hinzugefügt wird, dann muss ich hier wahrscheinlich das am Ende noch hinzufügen
+    }
     //Serial.println(json);
     httpResponseCode = http.POST(json);
     //"{ \"sensordata\":[]}"

@@ -80,8 +80,8 @@ bool weatherStationFlag = false;   //Flag for knowing if data from the weather s
 //Internet access // Replace with network credentials
 //const char* ssid = "nordisch-Box-1";
 //const char* password = "87654321";
-//const char* ssid = "castro";
-//const char* password = "msnc5000";
+//const char* ssid = "ShellyPro1-EC626091346C";
+//const char* password = "Demonstrator";
 const char* ssid = "Mexicano";
 const char* password = "Mexicano";
 //I2C Parameters
@@ -106,7 +106,8 @@ uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for stor
 ModbusMaster node;  //object node for class ModbusMaster
 // NTP SERVER - API variables
 const char* ntpServer = "pool.ntp.org";                                                                         //NTP server for getting the time online
-const char* serverName = "https://europe-west1-gruenfacade.cloudfunctions.net/app/api/facade/test/sensordata";  //Your Domain name with URL path or IP address with path for HTTP Posting
+const char* serverName = "https://gruenfacade.web.app/api/facade";  //Your Domain name with URL path or IP address with path for HTTP Posting
+const char* facadeID = "demonstrator";  //Id for the facade, this plays a role for the backend
 Preferences preferences;                //Variables and instances for the EEPROM rewrite/read procedure
 const char* spaceEEPROM = "timestamp";  //variable for the EEPROM procedure
 const char* paramEEPROM = "stamp";      //variable for the EEPROM procedure
@@ -287,6 +288,7 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
   if (WiFi.status() == WL_CONNECTED) {
     //Initialize the JSON object from the queuedMessages Array
     for (int i = 0; i < currentMessagesQueued; i++) {
+      //Post the sensor's information and the position in the first FRONTEND
       JSONVar myObject;
       char* sensorType = "";
       float dataCANBUS = -99.99;
@@ -300,19 +302,19 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
           Serial.println(dataCANBUS);
         break;
         case 2:
-          sensorType = "tempreture";
+          sensorType = "temperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print("Temperature: ");
           Serial.println(dataCANBUS);
         break;
         case 3:
-          sensorType = "internTempreture";
+          sensorType = "internTemperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print("internTemperature: ");
           Serial.println(dataCANBUS);
         break;
         case 4:
-          sensorType = "oneWireTemp";
+          sensorType = "oneWireTemperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print("oneWireTemperature: ");
           Serial.println(dataCANBUS);
@@ -325,32 +327,56 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       //Set every attribute of the JSONVar
       myObject["id"] = String(queuedMessages[i].id);
       myObject["type"] = sensorType;
-      myObject["time"] = timeStamps[i];
-      myObject["value"] = dataCANBUS;                          //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
-      myObject["row"] = row + 1;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+      myObject["x"] = row + 1;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
       int column = getSlaveColumn(row, queuedMessages[i].id);  //Method for getting the column of the device, according to the frame.id
-      myObject["column"] = column;
-      int response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
+      myObject["y"] = column;
+	    myObject["z"] = 0;
+      int response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
       if (dataCANBUS < humidityTreshold) {
         wateringFlag = true;
       }
       if(response == 200){
         Serial.println("posted");
+        //Serial.println(response);
       }
       else{
-        //while(response != 200){
-          //response = httpPOSTRequest(serverName, myObject);  //POST the JSON object
-          Serial.print("Not posted error code: ");
-          Serial.println(response);
-        //}
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
       }
-
-      // Serial.print("Row: ");
-      // Serial.print(row + 1);
-      // Serial.print(" Column: ");
-      // Serial.println(column);
-      //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-      //Serial.println(response); //Print the response code if desired
+      //Post the timestamp and value in the second FRONTEND
+      String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/"+ String(queuedMessages[i].id) +"/measurement";
+      JSONVar myObject1;
+      myObject1["time"] = timeStamps[i];
+	    myObject1["value"] = dataCANBUS;                          //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
+      int response1 = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
+      if(response1 == 200){
+        Serial.println("posted in the second backend");
+        //Serial.println(response1);
+      }
+      else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
+      }
     }
   } else {
     checkWiFi();  //Check for the WiFi connection before posting the messages
@@ -403,7 +429,7 @@ int httpGETRequest(const char* serverName) {
   return httpResponseCode;
 }
 //Post a message in the server
-int httpPOSTRequest(const char* serverName, JSONVar myObject) {
+int httpPOSTRequest(const char* serverName, JSONVar myObject,int backend) {
   //Get the JSON elements descriptions in case it is necessary to create a new object.
   //jsonElements = httpGETRequest(serverName);
   // Your Domain name with URL path or IP address with path
@@ -419,13 +445,20 @@ int httpPOSTRequest(const char* serverName, JSONVar myObject) {
     // If you need an HTTP request with a content type: application/json, use the following:
     http.addHeader("Content-Type", "application/json");
     //httpResponseCode = http.POST("{ \"sensordata\":[ { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 }, { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 } ] }");
-    String json = "{ \"sensordata\":[" + JSON.stringify(myObject) + "]}";
+    //String json = "{ \"sensordata\":[" + JSON.stringify(myObject) + "]}"; Altes String für den alten Backend
+    String json = "";
+    if(backend == 1){
+      json = JSON.stringify(myObject);
+    }
+    else{
+      json = "{\"id\":\"" + String(facadeID) + "\", \"sensors\":[" + JSON.stringify(myObject) + "]}"; //Falls dimensions noch hinzugefügt wird, dann muss ich hier wahrscheinlich das am Ende noch hinzufügen
+    }
     //Serial.println(json);
     httpResponseCode = http.POST(json);
     //"{ \"sensordata\":[]}"
   } else {
-    //Serial.print("Error code: ");
-    //Serial.println(httpResponseCode);
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
   }
   // Free resources
   http.end();
