@@ -136,10 +136,18 @@ void processDataWeatherstation() {
       Serial.println("posted");
     }
     else{
-      // while(response != 200){
-         Serial.print("Not posted Trying to post it again: ");
-         Serial.println(response);
-      // }
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
     }
     //Post the timestamp and value in the second FRONTEND
     String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39173/measurement";
@@ -152,8 +160,18 @@ void processDataWeatherstation() {
       //Serial.println(response);
     }
     else{
-        Serial.print("Not posted, error code: ");
-        Serial.println(response);
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -172,10 +190,18 @@ void processDataWeatherstation() {
       Serial.println("posted");
     }
     else{
-      // while(response != 200){
-         Serial.print("Not posted Trying to post it again: ");
-         Serial.println(response);
-      // }
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName, myObject2,0);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
     }
     //Post the timestamp and value in the second FRONTEND
     serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39174/measurement";
@@ -188,8 +214,18 @@ void processDataWeatherstation() {
       //Serial.println(response);
     }
     else{
-        Serial.print("Not posted, error code: ");
-        Serial.println(response);
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -208,10 +244,18 @@ void processDataWeatherstation() {
       Serial.println("posted");
     }
     else{
-      // while(response != 200){
-         Serial.print("Not posted Trying to post it again: ");
-         Serial.println(response);
-      // }
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName, myObject4,0);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
     }
     //Post the timestamp and value in the second FRONTEND
     serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39175/measurement";
@@ -224,8 +268,18 @@ void processDataWeatherstation() {
       //Serial.println(response);
     }
     else{
-        Serial.print("Not posted, error code: ");
-        Serial.println(response);
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          Serial.print("Not posted, error code: ");
+          Serial.println(response); //Print the response code if desired
+          Serial.println("reposting"); //Print the response code if desired
+          response = httpPOSTRequest(serverName1.c_str(), myObject5,1);  //POST the JSON object
+          counter++;
+          if(counter >= 5){
+            response = 200;
+          }
+        }
     }
   }
   else {

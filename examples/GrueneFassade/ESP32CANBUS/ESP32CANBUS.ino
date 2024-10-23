@@ -365,15 +365,15 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       }
       else{
         int counter = 0;
-        while(response != 200){
+        while(response1 != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
           Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
+          Serial.println(response1); //Print the response code if desired
           Serial.println("reposting"); //Print the response code if desired
-          response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+          response1 = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
           counter++;
           if(counter >= 5){
-            response = 200;
+            response1 = 200;
           }
         }
       }
