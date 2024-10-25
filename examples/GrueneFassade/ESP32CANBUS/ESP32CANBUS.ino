@@ -12,6 +12,9 @@
 %   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V31:    Changes in the implementation of the http backend posting, the server was changed and it is needed to post the information in
+%         two different backends, besides that, the information should be reposted 5 times inc ase that it is not beeing posted. After
+%         five time, then a timeout is coming.
 % V21:    Changes in the programm to adapt the program to the ZSE PCB
 %         -Add library wire.h and methods for the PCAL6408A I2C I/O expander
 %         -Add methods to get the time from the PCF8523T IC Clock
@@ -58,7 +61,7 @@
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
 #define SlavesTurnOnDelay 1000  // (ms) Wait for the slaves to warm up and be able to send information
-#define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
+#define wateringDelay 8000     //Delay in ms for waiting for the valve to water the pot
 #define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
@@ -80,15 +83,15 @@ bool weatherStationFlag = false;   //Flag for knowing if data from the weather s
 //Internet access // Replace with network credentials
 //const char* ssid = "nordisch-Box-1";
 //const char* password = "87654321";
-//const char* ssid = "ShellyPro1-EC626091346C";
-//const char* password = "Demonstrator";
-const char* ssid = "Mexicano";
-const char* password = "Mexicano";
+const char* ssid = "ShellyPro1-EC626091346C";
+const char* password = "Demonstrator";
+//const char* ssid = "Mexicano";
+//const char* password = "Mexicano";
 //I2C Parameters
 int ADDRESS_PCF8523T = 104;                          //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
 int ADDRESS_PCAL6408A = 32;                          //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
 unsigned char PCAL6408ARegister = 0x03;              //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
-unsigned char Konfiguration[] = { 0x7F, 0xBF };      //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
+unsigned char Konfiguration[] = { 0x7F, 0xBF, 0xDF};      //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
 const uint32_t CANBUSlines = sizeof(Konfiguration);  //Count of the different CANBUS lines/states that should be turned on
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
@@ -169,7 +172,7 @@ void loop() {
           const bool okinfoFrame = ACAN_ESP32::can.tryToSend(infoFrame);  //Sent remote frame to the BUS in order to get information from the Slaves
           if (okinfoFrame) {                                              //If the message was sent, then set the counters or increment them.
             SentFrameCount += 1;
-            delay(1000);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
+            delay(2000);  //It can be that this delay needs to be bigger if the CANBUS lines gets really long
             while (ACAN_ESP32::can.receive(frame)) {
               queuedMessages[arrayIndex] = frame;  //Add the received frames to a Queue in order to process them later
               timeStamps[arrayIndex] = getTime();
@@ -298,30 +301,31 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
         case 1:
           sensorType = "humidity";
           dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
-          Serial.print("Humidity: ");
-          Serial.println(dataCANBUS);
+          Serial.print(", Humidity: ");
+          Serial.print(dataCANBUS);
         break;
         case 2:
           sensorType = "temperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
-          Serial.print("Temperature: ");
-          Serial.println(dataCANBUS);
+          Serial.print(", Temperature: ");
+          Serial.print(dataCANBUS);
         break;
         case 3:
           sensorType = "internTemperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
-          Serial.print("internTemperature: ");
-          Serial.println(dataCANBUS);
+          Serial.print(", internTemperature: ");
+          Serial.print(dataCANBUS);
         break;
         case 4:
           sensorType = "oneWireTemperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
-          Serial.print("oneWireTemperature: ");
-          Serial.println(dataCANBUS);
+          Serial.print(", oneWireTemperature: ");
+          Serial.print(dataCANBUS);
         break;
         default:
           sensorType = "humidity";
           dataCANBUS = 99;
+          Serial.print(", unknown sensor");
           break;
       }
       //Set every attribute of the JSONVar
@@ -336,19 +340,20 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
         wateringFlag = true;
       }
       if(response == 200){
-        Serial.println("posted");
+        //Serial.print("posted, 1st backend, ");
         //Serial.println(response);
       }
       else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
@@ -360,19 +365,20 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
 	    myObject1["value"] = dataCANBUS;                          //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
       int response1 = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
       if(response1 == 200){
-        Serial.println("posted in the second backend");
+        //Serial.print(" posted 2nd backend, ");
         //Serial.println(response1);
       }
       else{
         int counter = 0;
         while(response1 != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response1); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response1 = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response1 == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response1 = 200;
           }
         }
@@ -457,8 +463,8 @@ int httpPOSTRequest(const char* serverName, JSONVar myObject,int backend) {
     httpResponseCode = http.POST(json);
     //"{ \"sensordata\":[]}"
   } else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
+    Serial.print(", Error code: ");
+    Serial.print(httpResponseCode);
   }
   // Free resources
   http.end();

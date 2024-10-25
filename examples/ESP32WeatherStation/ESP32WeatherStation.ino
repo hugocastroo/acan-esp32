@@ -41,10 +41,10 @@
 bool weatherStationFlag = false;   //Flag for knowing if data from the weather station was received or not
 bool InfoPrint = false;
 //Internet access // Replace with network credentials
-//const char* ssid = "ShellyPro1-EC626091346C";
-//const char* password = "Demonstrator";
-const char* ssid = "Mexicano";
-const char* password = "Mexicano";
+const char* ssid = "ShellyPro1-EC626091346C";
+const char* password = "Demonstrator";
+//const char* ssid = "Mexicano";
+//const char* password = "Mexicano";
 
 
 //Weather station variables
@@ -77,7 +77,7 @@ void setup() {
   Serial.println("Setup done");  //Info
 }
 void loop() {
-  delay(1000*30);
+  delay(1000*5);
   //Main Program
   weatherStationFlag = weatherStationGetData();
   timeStamp = getTime();
@@ -126,49 +126,51 @@ void processDataWeatherstation() {
     char* sensorType = "weatherStationHumidity";
     float dataWS = weatherStationHumidity;
     //Set every attribute of the JSONVar
-    myObject["id"] = "39173";
+    myObject["id"] = "4357"; //ID equal to 0x1105
     myObject["type"] = sensorType;
     myObject["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
     myObject["y"] = 1;
     myObject["z"] = 0;
     int response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted");
+      //Serial.println("posted");
     }
     else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
     }
     //Post the timestamp and value in the second FRONTEND
-    String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39173/measurement";
+    String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4357/measurement"; //ID equal to 0x1105
     JSONVar myObject1;
     myObject1["time"] = timeStamp;
     myObject1["value"] = weatherStationHumidity;
     response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted in the second backend");
+      //Serial.println("posted in the second backend");
       //Serial.println(response);
     }
     else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
@@ -180,49 +182,51 @@ void processDataWeatherstation() {
     JSONVar myObject2;
     sensorType = "weatherStationTemperature";
     //Set every attribute of the JSONVar
-    myObject2["id"] = "39174";
+    myObject2["id"] = "4358"; //ID equal to 0x1106
     myObject2["type"] = sensorType;
     myObject2["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
     myObject2["y"] = 1;
     myObject2["z"] = 0;
     response = httpPOSTRequest(serverName, myObject2,0);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted");
+      //Serial.println("posted");
     }
     else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName, myObject2,0);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
     }
     //Post the timestamp and value in the second FRONTEND
-    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39174/measurement";
+    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4358/measurement";//ID equal to 0x1106
     JSONVar myObject3;
     myObject3["time"] = timeStamp;
     myObject3["value"] = weatherStationTemperature;
     response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted in the second backend");
+      //Serial.println("posted in the second backend");
       //Serial.println(response);
     }
     else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
@@ -234,49 +238,51 @@ void processDataWeatherstation() {
     JSONVar myObject4;
     sensorType = "weatherStationLux";
     //Set every attribute of the JSONVar
-    myObject4["id"] = "39175";
+    myObject4["id"] = "4359"; //ID equal to 0x1107
     myObject4["type"] = sensorType;
     myObject4["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
     myObject4["y"] = 1;
     myObject4["z"] = 0;
     response = httpPOSTRequest(serverName, myObject4,0);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted");
+      //Serial.println("posted");
     }
     else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName, myObject4,0);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
     }
     //Post the timestamp and value in the second FRONTEND
-    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/39175/measurement";
+    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4359/measurement"; //ID equal to 0x1107
     JSONVar myObject5;
     myObject5["time"] = timeStamp;
     myObject5["value"] = weatherStationLux;
     response = httpPOSTRequest(serverName1.c_str(), myObject5,1);  //POST the JSON object
     if(response == 200){
-      Serial.println("posted in the second backend");
+      //Serial.println("posted in the second backend");
       //Serial.println(response);
     }
     else{
         int counter = 0;
         while(response != 200){
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          Serial.print("Not posted, error code: ");
-          Serial.println(response); //Print the response code if desired
-          Serial.println("reposting"); //Print the response code if desired
           response = httpPOSTRequest(serverName1.c_str(), myObject5,1);  //POST the JSON object
           counter++;
-          if(counter >= 5){
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
             response = 200;
           }
         }
@@ -361,8 +367,8 @@ int httpPOSTRequest(const char* serverName, JSONVar myObject,int backend) {
     httpResponseCode = http.POST(json);
     //"{ \"sensordata\":[]}"
   } else {
-    //Serial.print("Error code: ");
-    //Serial.println(httpResponseCode);
+    Serial.print(", Error code: ");
+    Serial.print(httpResponseCode);
   }
   // Free resources
   http.end();
