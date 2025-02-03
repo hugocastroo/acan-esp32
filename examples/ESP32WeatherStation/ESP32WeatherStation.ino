@@ -10,6 +10,7 @@
 %   Date:           15/10/2024
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V02:      Implemented offset for the temperature to make the correct reading when the temperature is engative. This was needed, since if not, the -1 value of temperature, was 65535.
 %	V01:			Weather station program base for gathering the information
 %           of the weather station and uploading the information with the 
 %           ESP32 directly to the cloud, without the master.
@@ -51,10 +52,12 @@ const char* password = "Demonstrator";
 float weatherStationHumidity = 0;
 float weatherStationTemperature = 0;
 int weatherStationLux = 0;
+float tempOffset = 65536;
 ModbusMaster node;  //object node for class ModbusMaster
 // NTP SERVER - API variables
 const char* ntpServer = "pool.ntp.org";                                                                         //NTP server for getting the time online
 const char* serverName = "https://gruenfacade.web.app/api/facade";  //Your Domain name with URL path or IP address with path for HTTP Posting
+int offsetUTC = 0;          //Offset für die Zeitzonen Uhrzeit ist in UTC, dann soll die Zeitzone hier inkrementiert oder dekrementiert werden
 const char* facadeID = "demonstrator";  //Id for the facade,  this plays a role for the backend
 Preferences preferences;                //Variables and instances for the EEPROM rewrite/read procedure
 const char* spaceEEPROM = "timestamp";  //variable for the EEPROM procedure
@@ -154,7 +157,7 @@ void processDataWeatherstation() {
     String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4357/measurement"; //ID equal to 0x1105
     JSONVar myObject1;
     myObject1["time"] = timeStamp;
-    myObject1["value"] = weatherStationHumidity;
+    myObject1["value"] = (weatherStationHumidity,0);
     response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
     if(response == 200){
       //Serial.println("posted in the second backend");
@@ -210,7 +213,7 @@ void processDataWeatherstation() {
     serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4358/measurement";//ID equal to 0x1106
     JSONVar myObject3;
     myObject3["time"] = timeStamp;
-    myObject3["value"] = weatherStationTemperature;
+    myObject3["value"] = (weatherStationTemperature,1);
     response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
     if(response == 200){
       //Serial.println("posted in the second backend");
@@ -384,8 +387,8 @@ String getTime() {
     sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", year(), month(), day(), hour(), minute(), second());  //Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
     return (timestamp);
   } else {                                                                                                                                                                              //If it was possible to get the information from the NTP server, then use this information and store it in the EEPROM and sync the IC Clock Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
-    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + 2, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
-    setTime(timeinfo.tm_hour + 2, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
+    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + offsetUTC, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
+    setTime(timeinfo.tm_hour + offsetUTC, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
     overwriteEEPROMTimestamp(now());  //Overwrite the EEPROMtimeStamp with the current value from the NTP server to refresh it with new data
     return timestamp;
   }
@@ -465,6 +468,13 @@ bool weatherStationGetData() {
     weatherStationHumidity = node.getResponseBuffer(0) / 10.0;
     weatherStationTemperature = node.getResponseBuffer(1) / 10.0;
     weatherStationLux = node.getResponseBuffer(2);
+    if(weatherStationTemperature > 2000)
+    {
+      Serial.println(weatherStationTemperature);
+      weatherStationTemperature = (node.getResponseBuffer(1) - tempOffset)/10.0;
+      Serial.println("value was negative");
+      Serial.println(weatherStationTemperature);
+    }
     return true;
   } else {  //If no data received, set the weather station flag to error.
     weatherStationHumidity = 0;

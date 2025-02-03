@@ -12,6 +12,9 @@
 %   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+& V33:    Changed the watering flag to 15K ms to give more time to the PGE to finish watering and avoid that one ventil stays open.
+% V32:    Changed the wateringFlag activation, since it was wrong and it was beeing activated even by the temperature measurements and not just
+%         the humidity measurements.
 % V31:    Changes in the implementation of the http backend posting, the server was changed and it is needed to post the information in
 %         two different backends, besides that, the information should be reposted 5 times inc ase that it is not beeing posted. After
 %         five time, then a timeout is coming.
@@ -61,12 +64,13 @@
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
 #define SlavesTurnOnDelay 1000  // (ms) Wait for the slaves to warm up and be able to send information
-#define wateringDelay 8000     //Delay in ms for waiting for the valve to water the pot
+#define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
 #define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
 int findSlavesFrameID = 91;  //ID for the findSlaves frame to start the find slaves process    DEC 91 - HEX 5B
 int requestFrameID = 92;     //ID for the findSlaves frame to start the find slaves process		DEC 92 - HEX 5C
+int offsetUTC = 0;          //Offset für die Zeitzonen Uhrzeit ist in UTC, dann soll die Zeitzone hier inkrementiert oder dekrementiert werden
 #define ArrayLimit 99        //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
 #define Samplings 100        //Number of samplings that should be done in order to scan for CANBUS messages
 #define humidityTreshold 30  //Treshold for the humidity to start the ventils or not.
@@ -126,7 +130,7 @@ void setup() {
   initWiFi();                          // Init WiFi
   getEEPROMTimestamp();                //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
   configTime(0, 0, ntpServer);         //Start NTP server connection for the UNIX TIME
-  delay(100);
+  delay(100);  
   //Display ESP32 Chip and BUS Settings Info if the InfoPrint flag is active. Possible section for further debugging
   if (InfoPrint) {
     esp_chip_info_t chip_info;
@@ -195,6 +199,9 @@ void loop() {
           Serial.println("Watering");              //Info
           delay(wateringDelay);
           wateringFlag = false;  //Set the wateringFlag to false for the next cycle.
+        }
+        else{
+          Serial.println("Not watering");              //Info
         }
         AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the cycle.
         Serial.println("Finished the cycle");              //Info
@@ -303,6 +310,9 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
           dataCANBUS = scaleCANBUShumidity(queuedMessages[i].data32[0]);
           Serial.print(", Humidity: ");
           Serial.print(dataCANBUS);
+          if (dataCANBUS < humidityTreshold) {
+            wateringFlag = true;
+          }
         break;
         case 2:
           sensorType = "temperature";
@@ -336,9 +346,6 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       myObject["y"] = column;
 	    myObject["z"] = 0;
       int response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
-      if (dataCANBUS < humidityTreshold) {
-        wateringFlag = true;
-      }
       if(response == 200){
         //Serial.print("posted, 1st backend, ");
         //Serial.println(response);
@@ -480,8 +487,8 @@ String getTime() {
     sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", year(), month(), day(), hour(), minute(), second());  //Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
     return (timestamp);
   } else {                                                                                                                                                                              //If it was possible to get the information from the NTP server, then use this information and store it in the EEPROM and sync the IC Clock Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
-    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + 2, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
-    setTime(timeinfo.tm_hour + 2, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
+    sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + offsetUTC, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
+    setTime(timeinfo.tm_hour + offsetUTC, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
     CLOCKFlag = checkForI2CDevices(ADDRESS_PCF8523T);                                                                                                                                   ////Scan for the Clock IC and proof communication
     if (CLOCKFlag) {                                                                                                                                                                    //If flag is active, the the time from the clock should be overwritten
       //register call
@@ -597,7 +604,7 @@ float scaleCANBUStemperature(uint32_t data32) {
   float tempA = -50.0;  //Check if these values are correct or not, before it was apparently working with -100 and 100
   float tempB = 150.0; //Check if these values would work for the extern and intern temperature sensor or just with one sensor
   float result = ((((tempB - tempA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + tempA);
-  return result;
+  return (result,1);
 }
 //Scaling for the CANBUS humidity Data
 float scaleCANBUShumidity(uint32_t data32) {
@@ -607,7 +614,7 @@ float scaleCANBUShumidity(uint32_t data32) {
   float humidA = 0.0;
   float humidB = 100.0;
   float result = ((((humidB - humidA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + humidA);
-  return result;
+  return (result,0);
 }
 //Method for turning the I/O PCAL6408A ON/OFF
 void AusgangEinschalten(byte ADDRESS_PCAL6408A, byte data) {
