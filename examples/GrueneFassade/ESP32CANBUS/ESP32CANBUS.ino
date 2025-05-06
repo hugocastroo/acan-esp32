@@ -12,6 +12,7 @@
 %   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V34:    Added a 10 seconds delay for posting information of the weatherstation, since now there are two weather stations installed
 & V33:    Changed the watering flag to 15K ms to give more time to the PGE to finish watering and avoid that one ventil stays open.
 % V32:    Changed the wateringFlag activation, since it was wrong and it was beeing activated even by the temperature measurements and not just
 %         the humidity measurements.
@@ -66,6 +67,7 @@
 #define SlavesTurnOnDelay 1000  // (ms) Wait for the slaves to warm up and be able to send information
 #define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
 #define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
+#define WeatherStationUploadingDelay 10000 //Delay in ms for the information that is beeing load from the external weather station
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
 int findSlavesFrameID = 91;  //ID for the findSlaves frame to start the find slaves process    DEC 91 - HEX 5B
@@ -203,6 +205,7 @@ void loop() {
         else{
           Serial.println("Not watering");              //Info
         }
+        delay(WeatherStationUploadingDelay);
         AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the cycle.
         Serial.println("Finished the cycle");              //Info
       }
@@ -604,7 +607,7 @@ float scaleCANBUStemperature(uint32_t data32) {
   float tempA = -50.0;  //Check if these values are correct or not, before it was apparently working with -100 and 100
   float tempB = 150.0; //Check if these values would work for the extern and intern temperature sensor or just with one sensor
   float result = ((((tempB - tempA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + tempA);
-  return (result,1);
+  return result;
 }
 //Scaling for the CANBUS humidity Data
 float scaleCANBUShumidity(uint32_t data32) {
@@ -614,7 +617,7 @@ float scaleCANBUShumidity(uint32_t data32) {
   float humidA = 0.0;
   float humidB = 100.0;
   float result = ((((humidB - humidA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + humidA);
-  return (result,0);
+  return result;
 }
 //Method for turning the I/O PCAL6408A ON/OFF
 void AusgangEinschalten(byte ADDRESS_PCAL6408A, byte data) {

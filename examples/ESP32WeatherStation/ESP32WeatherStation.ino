@@ -10,6 +10,7 @@
 %   Date:           15/10/2024
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V03:      Added a second weather station for comparison of the values behind the plants. The software has not been tested
 % V02:      Implemented offset for the temperature to make the correct reading when the temperature is engative. This was needed, since if not, the -1 value of temperature, was 65535.
 %	V01:			Weather station program base for gathering the information
 %           of the weather station and uploading the information with the 
@@ -76,12 +77,12 @@ void setup() {
     esp_chip_info_t chip_info;
     chipInfo(chip_info);
   }
-  weatherStationSetUp(); //Configure RS485 Modbus channel for the weather station
   Serial.println("Setup done");  //Info
 }
 void loop() {
   delay(1000*5);
   //Main Program
+  weatherStationSetUp(1); //Configure RS485 Modbus channel for the sensor with adress #1
   weatherStationFlag = weatherStationGetData();
   timeStamp = getTime();
   if (weatherStationFlag) {  
@@ -96,10 +97,26 @@ void loop() {
     Serial.println("Lux");
     processDataWeatherstation();
     Serial.println("All information posted");
-    delay(1000*60*5);
+    weatherStationFlag = false;
+    delay(500);
   }
-  else{
-
+  weatherStationSetUp(3); //Configure RS485 Modbus channel for the sensor with adress #1
+  weatherStationFlag = weatherStationGetData();
+  timeStamp = getTime();
+  if (weatherStationFlag) {  
+    Serial.print("Humidity: ");
+    Serial.print(weatherStationHumidity);
+    Serial.println("%");
+    Serial.print("Temp: ");
+    Serial.print(weatherStationTemperature);
+    Serial.println("°C");
+    Serial.print("Illuminance: ");
+    Serial.print(weatherStationLux);
+    Serial.println("Lux");
+    processDataWeatherstation2();
+    Serial.println("All information posted");
+    weatherStationFlag = false;
+    delay(1000*60*5);
   }
 
 }
@@ -127,7 +144,6 @@ void processDataWeatherstation() {
     //Post the sensor's information and the position in the first FRONTEND
     JSONVar myObject;
     char* sensorType = "weatherStationHumidity";
-    float dataWS = weatherStationHumidity;
     //Set every attribute of the JSONVar
     myObject["id"] = "4357"; //ID equal to 0x1105
     myObject["type"] = sensorType;
@@ -157,7 +173,7 @@ void processDataWeatherstation() {
     String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4357/measurement"; //ID equal to 0x1105
     JSONVar myObject1;
     myObject1["time"] = timeStamp;
-    myObject1["value"] = (weatherStationHumidity,0);
+    myObject1["value"] = weatherStationHumidity;
     response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
     if(response == 200){
       //Serial.println("posted in the second backend");
@@ -213,7 +229,7 @@ void processDataWeatherstation() {
     serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4358/measurement";//ID equal to 0x1106
     JSONVar myObject3;
     myObject3["time"] = timeStamp;
-    myObject3["value"] = (weatherStationTemperature,1);
+    myObject3["value"] = weatherStationTemperature;
     response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
     if(response == 200){
       //Serial.println("posted in the second backend");
@@ -267,6 +283,181 @@ void processDataWeatherstation() {
     }
     //Post the timestamp and value in the second FRONTEND
     serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4359/measurement"; //ID equal to 0x1107
+    JSONVar myObject5;
+    myObject5["time"] = timeStamp;
+    myObject5["value"] = weatherStationLux;
+    response = httpPOSTRequest(serverName1.c_str(), myObject5,1);  //POST the JSON object
+    if(response == 200){
+      //Serial.println("posted in the second backend");
+      //Serial.println(response);
+    }
+    else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          response = httpPOSTRequest(serverName1.c_str(), myObject5,1);  //POST the JSON object
+          counter++;
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
+            response = 200;
+          }
+        }
+    }
+  }
+  else {
+    checkWiFi();  //Check for the WiFi connection before posting the messages
+    Serial.println("WiFi Disconnected");
+  }
+}
+//Process the queued messages
+void processDataWeatherstation2() {
+  if (WiFi.status() == WL_CONNECTED) {
+    //Initialize the JSON object for the humidity package
+    //Post the sensor's information and the position in the first FRONTEND
+    JSONVar myObject;
+    char* sensorType = "weatherStationHumidity";
+    //Set every attribute of the JSONVar
+    myObject["id"] = "4613"; //ID equal to 0x1205
+    myObject["type"] = sensorType;
+    myObject["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+    myObject["y"] = 1;
+    myObject["z"] = 0;
+    int response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+    if(response == 200){
+      //Serial.println("posted");
+    }
+    else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+          counter++;
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
+            response = 200;
+          }
+        }
+    }
+    //Post the timestamp and value in the second FRONTEND
+    String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4613/measurement"; //ID equal to 0x1205
+    JSONVar myObject1;
+    myObject1["time"] = timeStamp;
+    myObject1["value"] = weatherStationHumidity;
+    response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
+    if(response == 200){
+      //Serial.println("posted in the second backend");
+      //Serial.println(response);
+    }
+    else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          response = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
+          counter++;
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
+            response = 200;
+          }
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //Initialize the JSON object for the humidity package
+    //Post the sensor's information and the position in the first FRONTEND
+    JSONVar myObject2;
+    sensorType = "weatherStationTemperature";
+    //Set every attribute of the JSONVar
+    myObject2["id"] = "4614"; //ID equal to 0x1206
+    myObject2["type"] = sensorType;
+    myObject2["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+    myObject2["y"] = 1;
+    myObject2["z"] = 0;
+    response = httpPOSTRequest(serverName, myObject2,0);  //POST the JSON object
+    if(response == 200){
+      //Serial.println("posted");
+    }
+    else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          response = httpPOSTRequest(serverName, myObject2,0);  //POST the JSON object
+          counter++;
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
+            response = 200;
+          }
+        }
+    }
+    //Post the timestamp and value in the second FRONTEND
+    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4614/measurement";//ID equal to 0x1206
+    JSONVar myObject3;
+    myObject3["time"] = timeStamp;
+    myObject3["value"] = weatherStationTemperature;
+    response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
+    if(response == 200){
+      //Serial.println("posted in the second backend");
+      //Serial.println(response);
+    }
+    else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          response = httpPOSTRequest(serverName1.c_str(), myObject3,1);  //POST the JSON object
+          counter++;
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
+            response = 200;
+          }
+        }
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //Initialize the JSON object for the humidity package
+    //Post the sensor's information and the position in the first FRONTEND
+    JSONVar myObject4;
+    sensorType = "weatherStationLux";
+    //Set every attribute of the JSONVar
+    myObject4["id"] = "4615"; //ID equal to 0x1207
+    myObject4["type"] = sensorType;
+    myObject4["x"] = 3;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+    myObject4["y"] = 1;
+    myObject4["z"] = 0;
+    response = httpPOSTRequest(serverName, myObject4,0);  //POST the JSON object
+    if(response == 200){
+      //Serial.println("posted");
+    }
+    else{
+        int counter = 0;
+        while(response != 200){
+          //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
+          response = httpPOSTRequest(serverName, myObject4,0);  //POST the JSON object
+          counter++;
+          if(counter <= 4 && response == 200){
+            Serial.println(" reposting succesfull."); //Print the response code if desired
+          }
+          else if(counter >= 5){
+            Serial.println(" reposting timeout."); //Print the response code if desired
+            response = 200;
+          }
+        }
+    }
+    //Post the timestamp and value in the second FRONTEND
+    serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/4615/measurement"; //ID equal to 0x1207
     JSONVar myObject5;
     myObject5["time"] = timeStamp;
     myObject5["value"] = weatherStationLux;
@@ -438,11 +629,11 @@ void overwriteEEPROMTimestamp(long stamp) {
   preferences.end();
 }
 //Method for the set up of the weather station configuration
-void weatherStationSetUp() {
+void weatherStationSetUp(int adress) {
   pinMode(MAX485_DE_RE, OUTPUT);                          //Set the MAX485_DE_RE as output
   digitalWrite(MAX485_DE_RE, LOW);                        //Set the MAX485_DE_RE low
   Serial1.begin(4800, SERIAL_8N1, MAX485_RX, MAX485_TX);  // Transmission mode: MODBUS-RTU, Baud rate: 4800bps, Data bits: 8, Stop bit: 1, Check bit: no
-  node.begin(1, Serial1);                                 // The weather station has a default communication baudrate of 4800 bps and 0x01 address.
+  node.begin(adress, Serial1);                                 // The weather station has a default communication baudrate of 4800 bps and 0x01 address.
   node.preTransmission(preTransmission);                  //Set the transmision values to default
   node.postTransmission(postTransmission);
 }
