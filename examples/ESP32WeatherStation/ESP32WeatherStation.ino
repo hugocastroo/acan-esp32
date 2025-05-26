@@ -7,10 +7,10 @@
 %                   gathering the information of the weather station and 
 %                   uploading the information with the ESP32 directly to the cloud, 
 %                   without the master using HTTP protocol.
-%   Date:           15/10/2024
+%   Date:           26/05/2024
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
-% V03:      Added a second weather station for comparison of the values behind the plants. The software has not been tested
+% V03:      Added a second weather station for comparison of the values behind the plants. The software was tested and it is working find and getting both temperatures and illuminations.
 % V02:      Implemented offset for the temperature to make the correct reading when the temperature is engative. This was needed, since if not, the -1 value of temperature, was 65535.
 %	V01:			Weather station program base for gathering the information
 %           of the weather station and uploading the information with the 

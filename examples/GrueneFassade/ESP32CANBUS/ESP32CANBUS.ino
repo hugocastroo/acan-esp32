@@ -9,7 +9,7 @@
 %					using the CANBUS protocol. After sampling the information
 %					in the CANBUS line, the script uploads the measurements
 %					using HTTP protocol.
-%   Date:           06/12/2023      
+%   Date:           26/05/2026      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
 % V34:    Added a 10 seconds delay for posting information of the weatherstation, since now there are two weather stations installed
