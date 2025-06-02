@@ -98,7 +98,7 @@ const char* password = "Mexicano";
 int ADDRESS_PCF8523T = 104;                            //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
 int ADDRESS_PCAL6408A = 32;                            //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
 unsigned char PCAL6408ARegister = 0x03;                //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
-unsigned char Konfiguration[] = { 0x7F, 0xBF, 0xDF };  //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
+unsigned char Konfiguration[] = { 0x7F, 0xBF};  //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
 const uint32_t CANBUSlines = sizeof(Konfiguration);    //Count of the different CANBUS lines/states that should be turned on
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
@@ -171,16 +171,9 @@ void loop() {
     referenzMillis = millis();
     if (PCAL6408AFlag) {                                          //If the PCAL6408AFlag then all different channels will be turned on respectively
       for (int i = 0; i < CANBUSlines; i++) {                     //For loop for starting the four different outputs in the Konfiguration array
-        //ACAN_ESP32::can.end(); //CANBUS channel off, in case some line was still on. //check why it is not working.
-        delay(10);
         AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
-        delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start
         const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
-        if (errorCodeCANBUS != 0) {
-          Serial.println("Fehler beim Starten von CAN-Line " + String(i+1));
-          AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);
-          continue;
-        } 
+        delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start
         arrayIndex = 0;
         currentMessagesQueued = 0;
         for (int j = 0; j < maxSlavesInLine; j++) {
@@ -214,6 +207,8 @@ void loop() {
           Serial.println("Not watering");  //Info
         }
 		    delay(WeatherStationUploadingDelay);
+        ACAN_ESP32::can.end(); //CANBUS channel off, in case some line was still on.
+        delay(10);
         AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the cycle.
         Serial.println("Finished the cycle");         //Info
       }
@@ -648,11 +643,6 @@ void findSlaves() {
   for (int i = 0; i < CANBUSlines; i++) {                     //Loop for starting the different power line channels
     AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
     const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
-      if (errorCodeCANBUS != 0) {
-        Serial.println("Fehler beim Starten von CAN-Line " + String(i+1));
-        AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);
-        continue;
-      } 
     delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start, around two seconds should be fine, if not then 5 seconds
     CANMessage findSlavesFrame;                               //Frame configuration for the find process from the slaves
     findSlavesFrame.ext = false;
@@ -679,7 +669,7 @@ void findSlaves() {
             newAddr.ext = true;    // Extended ID
             newAddr.rtr = false;    // Remote?
             newAddr.len = 4;       // oder 0, je nach Protokoll
-            newAddr.data32[0] = (i+1)*10 + (j+1);                              //Rausfinden wie ich die Data beim Pico richtig auslesen kann, bis jetzt war es nicht möglich
+            newAddr.data32[0] = (i+3)*10 + (j+1);                              //Rausfinden wie ich die Data beim Pico richtig auslesen kann, bis jetzt war es nicht möglich
             const bool okNewAdressFrame = ACAN_ESP32::can.tryToSend(newAddr);  //Sent remote frame to the BUS in order to start the find process
             Serial.println(newAddr.data32[0]);                   //Info
             CANMessage newAdressAnswer;                                               //No initialization needed, since the message will be read from the slaves
@@ -692,7 +682,7 @@ void findSlaves() {
                 Serial.println(newAdressAnswer.id);             //Info
                 Serial.print("And the data is: ");
                 Serial.println(newAdressAnswer.data32[0]);             //Info
-                potsMatrix[i][j] = (i+1)*10 + (j+1);                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
+                potsMatrix[i][j] = (i+3)*10 + (j+1);                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
                 Serial.print("Matrix value: ");
                 Serial.println(potsMatrix[i][j]);                                                  //Info
                 newAdressMessageReceived = true;
