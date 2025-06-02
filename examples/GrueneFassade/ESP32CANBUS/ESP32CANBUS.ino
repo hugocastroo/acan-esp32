@@ -9,7 +9,7 @@
 %					using the CANBUS protocol. After sampling the information
 %					in the CANBUS line, the script uploads the measurements
 %					using HTTP protocol.
-%   Date:           26/05/2026      
+%   Date:           06/12/2023      
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
 % V34:    Added a 10 seconds delay for posting information of the weatherstation, since now there are two weather stations installed
@@ -57,52 +57,53 @@
 //Setup-Global Variables
 //Pins
 //#define PIN_IOEXPANDER 16  //GPIO PIN für die RESET PIN_IOEXPANDER, es muss HIGH sein, sonst startet der IC sich die ganze Zeit neu und kommuniziert nicht.
-#define I2C_SDA 33         //SDA GPIO PIN für die I2C Kommunikation
-#define I2C_SCL 32         //SCL GPIO PIN für die I2C Kommunikation
-#define MAX485_DE_RE 16    //Pin for toggling the MAX485 Board //PIN_IOEXPANDER muss gelöscht werden, bei der nächsten Platine.
-#define MAX485_RX 18       //Pin for the RX communication RO RS485MAX
-#define MAX485_TX 19       //Pin for the TX communication DI RS485MAX
+#define I2C_SDA 33       //SDA GPIO PIN für die I2C Kommunikation
+#define I2C_SCL 32       //SCL GPIO PIN für die I2C Kommunikation
+#define MAX485_DE_RE 16  //Pin for toggling the MAX485 Board //PIN_IOEXPANDER muss gelöscht werden, bei der nächsten Platine.
+#define MAX485_RX 18     //Pin for the RX communication RO RS485MAX
+#define MAX485_TX 19     //Pin for the TX communication DI RS485MAX
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
-#define SlavesTurnOnDelay 1000  // (ms) Wait for the slaves to warm up and be able to send information
+#define SlavesTurnOnDelay 2000  // (ms) Wait for the slaves to warm up and be able to send information
 #define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
 #define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
 #define WeatherStationUploadingDelay 10000 //Delay in ms for the information that is beeing load from the external weather station
 //Misc.
 int infoFrameID = 90;        //ID for the remote frames to ask for information from the slaves DEC 90 - HEX 5A
 int findSlavesFrameID = 91;  //ID for the findSlaves frame to start the find slaves process    DEC 91 - HEX 5B
-int requestFrameID = 92;     //ID for the findSlaves frame to start the find slaves process		DEC 92 - HEX 5C
-int offsetUTC = 0;          //Offset für die Zeitzonen Uhrzeit ist in UTC, dann soll die Zeitzone hier inkrementiert oder dekrementiert werden
+int requestFrameID = 92;     //ID for the requestFrameID frame to start the find slaves process		DEC 92 - HEX 5C
+const uint32_t newAddressFrameID = 0x8000005DUL;
+
+int offsetUTC = 0;           //Offset für die Zeitzonen Uhrzeit ist in UTC, dann soll die Zeitzone hier inkrementiert oder dekrementiert werden
 #define ArrayLimit 99        //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
 #define Samplings 100        //Number of samplings that should be done in order to scan for CANBUS messages
 #define humidityTreshold 30  //Treshold for the humidity to start the ventils or not.
 //Flags
-bool InfoPrint = false;            //Change flag to show chip and BUS settings in the serial monitor 0-1
-bool ErrorInfoPrint = true;        //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
-bool findFlag = false;             //Find Flag for running the find method to find all the CAN devices in the line. Matrix principle
-bool PCAL6408AFlag = false;        //Flag for the PCAL IC Loop, the flag is rewritten with the checkForI2CDevices method after establishing communication with the IC
-bool CLOCKFlag = false;            //Flag for the CLOCK IC
-bool nextSlaveFlag = false;        //Flag for a new found slave that should be added to the matrix
-bool wateringFlag = false;         //Flag for the system to know if it is needed to trigger and extra delay in order to wait for the channel to finish watering
-bool findMessageReceived = false;  //Flag for identifing when a find message was received and stop scaning for a message
-bool weatherStationFlag = false;   //Flag for knowing if data from the weather station was received or not
+bool InfoPrint = false;                 //Change flag to show chip and BUS settings in the serial monitor 0-1
+bool ErrorInfoPrint = true;             //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
+bool findFlag = false;                  //Find Flag for running the find method to find all the CAN devices in the line. Matrix principle
+bool PCAL6408AFlag = false;             //Flag for the PCAL IC Loop, the flag is rewritten with the checkForI2CDevices method after establishing communication with the IC
+bool CLOCKFlag = false;                 //Flag for the CLOCK IC
+bool nextSlaveFlag = false;             //Flag for a new found slave that should be added to the matrix
+bool wateringFlag = false;              //Flag for the system to know if it is needed to trigger and extra delay in order to wait for the channel to finish watering
+bool findMessageReceived = false;       //Flag for identifing when a find message was received and stop scaning for a message
+bool newAdressMessageReceived = false;  //Flag for identifing when a find message was received and stop scaning for a message
+bool weatherStationFlag = false;        //Flag for knowing if data from the weather station was received or not
 //Internet access // Replace with network credentials
-//const char* ssid = "nordisch-Box-1";
-//const char* password = "87654321";
-const char* ssid = "ShellyPro1-EC626091346C";
-const char* password = "Demonstrator";
-//const char* ssid = "Mexicano";
-//const char* password = "Mexicano";
+//const char* ssid = "ShellyPro1-EC626091346C";
+//const char* password = "Demonstrator";
+const char* ssid = "Mexicano";
+const char* password = "Mexicano";
 //I2C Parameters
-int ADDRESS_PCF8523T = 104;                          //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
-int ADDRESS_PCAL6408A = 32;                          //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
-unsigned char PCAL6408ARegister = 0x03;              //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
-unsigned char Konfiguration[] = { 0x7F, 0xBF, 0xDF};      //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
-const uint32_t CANBUSlines = sizeof(Konfiguration);  //Count of the different CANBUS lines/states that should be turned on
+int ADDRESS_PCF8523T = 104;                            //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
+int ADDRESS_PCAL6408A = 32;                            //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
+unsigned char PCAL6408ARegister = 0x03;                //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
+unsigned char Konfiguration[] = { 0x7F, 0xBF, 0xDF };  //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
+const uint32_t CANBUSlines = sizeof(Konfiguration);    //Count of the different CANBUS lines/states that should be turned on
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
-unsigned long referenzMillis = 1000 * 60 * 59;             //Counter for the time loop
-unsigned long TimeInterval = 1000 * 60 * 60;               //Time that should elapse between every loop
+unsigned long referenzMillis = 1000 * 60 * 59;            //Counter for the time loop
+unsigned long TimeInterval = 1000 * 60 * 60;              //Time that should elapse between every loop
 uint32_t currentMessagesQueued = 0;                       //Counter for the queued messages in the array before processing them
 CANMessage queuedMessages[ArrayLimit];                    //Array for Queuing the received messages
 String timeStamps[ArrayLimit];                            //Array for storing the timestamp of every CANBUS message when they are received.
@@ -112,14 +113,14 @@ uint32_t ReceivedFrameCount = 0;  //Counter for the received frames  from the sl
 uint32_t SentFrameCount = 0;      //Counter for the sent frames from the Master in the CANBUS line
 const uint32_t maxSlavesInLine = 3;
 uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for storing the matrix of the system pots
-ModbusMaster node;  //object node for class ModbusMaster
+ModbusMaster node;                                              //object node for class ModbusMaster
 // NTP SERVER - API variables
-const char* ntpServer = "pool.ntp.org";                                                                         //NTP server for getting the time online
+const char* ntpServer = "pool.ntp.org";                             //NTP server for getting the time online
 const char* serverName = "https://gruenfacade.web.app/api/facade";  //Your Domain name with URL path or IP address with path for HTTP Posting
-const char* facadeID = "demonstrator";  //Id for the facade, this plays a role for the backend
-Preferences preferences;                //Variables and instances for the EEPROM rewrite/read procedure
-const char* spaceEEPROM = "timestamp";  //variable for the EEPROM procedure
-const char* paramEEPROM = "stamp";      //variable for the EEPROM procedure
+const char* facadeID = "demonstrator";                              //Id for the facade, this plays a role for the backend
+Preferences preferences;                                            //Variables and instances for the EEPROM rewrite/read procedure
+const char* spaceEEPROM = "timestamp";                              //variable for the EEPROM procedure
+const char* paramEEPROM = "stamp";                                  //variable for the EEPROM procedure
 char* CANBUSdata = "CANBUSdata";
 char* CANBUSKeys[] = { "CB1Elements", "CB2Elements", "CB3Elements", "CB4Elements" };
 unsigned long long CANBUSValues[] = { 0, 0, 0, 0 };
@@ -128,11 +129,11 @@ void setup() {
   //Configure the OUTPUT PINs and signals for the board to work properly
   //pinMode(PIN_IOEXPANDER, OUTPUT);     //Set the PIN for the PCAL6408A as OUTPUT
   //digitalWrite(PIN_IOEXPANDER, HIGH);  //Set the PIN for the PCAL6408A HIGH, IF THIS IS NOT DONE; IT WILL NOT COMMUNICATE.
-  Serial.begin(115200);                // Start serial in case it is desired to debug or display any information
-  initWiFi();                          // Init WiFi
-  getEEPROMTimestamp();                //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
-  configTime(0, 0, ntpServer);         //Start NTP server connection for the UNIX TIME
-  delay(100);  
+  Serial.begin(115200);         // Start serial in case it is desired to debug or display any information
+  initWiFi();                   // Init WiFi
+  getEEPROMTimestamp();         //Get the last timestamp stored in the EEPROM in case that the NTP server cannot establish connecion.
+  configTime(0, 0, ntpServer);  //Start NTP server connection for the UNIX TIME
+  delay(100);
   //Display ESP32 Chip and BUS Settings Info if the InfoPrint flag is active. Possible section for further debugging
   if (InfoPrint) {
     esp_chip_info_t chip_info;
@@ -162,6 +163,7 @@ void loop() {
   infoFrame.ext = false;
   infoFrame.id = infoFrameID;
   infoFrame.rtr = true;
+  infoFrame.len = 0;
   CANMessage frame;                                //No initialization needed, since the message will be read from the slaves
   int arrayIndex = 0;                              //Variable for the elements position in the arrays
   if (millis() - referenzMillis > TimeInterval) {  // Overflow solution for the time problem.
@@ -169,9 +171,16 @@ void loop() {
     referenzMillis = millis();
     if (PCAL6408AFlag) {                                          //If the PCAL6408AFlag then all different channels will be turned on respectively
       for (int i = 0; i < CANBUSlines; i++) {                     //For loop for starting the four different outputs in the Konfiguration array
+        //ACAN_ESP32::can.end(); //CANBUS channel off, in case some line was still on. //check why it is not working.
+        delay(10);
         AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
-        const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
         delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start
+        const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+        if (errorCodeCANBUS != 0) {
+          Serial.println("Fehler beim Starten von CAN-Line " + String(i+1));
+          AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);
+          continue;
+        } 
         arrayIndex = 0;
         currentMessagesQueued = 0;
         for (int j = 0; j < maxSlavesInLine; j++) {
@@ -201,13 +210,12 @@ void loop() {
           Serial.println("Watering");              //Info
           delay(wateringDelay);
           wateringFlag = false;  //Set the wateringFlag to false for the next cycle.
+        } else {
+          Serial.println("Not watering");  //Info
         }
-        else{
-          Serial.println("Not watering");              //Info
-        }
-        delay(WeatherStationUploadingDelay);
+		    delay(WeatherStationUploadingDelay);
         AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);  //Shut all channels down after the cycle.
-        Serial.println("Finished the cycle");              //Info
+        Serial.println("Finished the cycle");         //Info
       }
     }
   }
@@ -316,25 +324,25 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
           if (dataCANBUS < humidityTreshold) {
             wateringFlag = true;
           }
-        break;
+          break;
         case 2:
           sensorType = "temperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print(", Temperature: ");
           Serial.print(dataCANBUS);
-        break;
+          break;
         case 3:
           sensorType = "internTemperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print(", internTemperature: ");
           Serial.print(dataCANBUS);
-        break;
+          break;
         case 4:
           sensorType = "oneWireTemperature";
           dataCANBUS = scaleCANBUStemperature(queuedMessages[i].data32[0]);
           Serial.print(", oneWireTemperature: ");
           Serial.print(dataCANBUS);
-        break;
+          break;
         default:
           sensorType = "humidity";
           dataCANBUS = 99;
@@ -344,51 +352,47 @@ void processQueuedMessages(CANMessage queuedMessages[], int row) {
       //Set every attribute of the JSONVar
       myObject["id"] = String(queuedMessages[i].id);
       myObject["type"] = sensorType;
-      myObject["x"] = row + 1;                               //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
+      myObject["x"] = row + 1;                                 //Set the row value to the object using the CANBUSlines parameter given with row, + 1 since it starts in 0
       int column = getSlaveColumn(row, queuedMessages[i].id);  //Method for getting the column of the device, according to the frame.id
       myObject["y"] = column;
-	    myObject["z"] = 0;
-      int response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
-      if(response == 200){
+      myObject["z"] = 0;
+      int response = httpPOSTRequest(serverName, myObject, 0);  //POST the JSON object
+      if (response == 200) {
         //Serial.print("posted, 1st backend, ");
         //Serial.println(response);
-      }
-      else{
+      } else {
         int counter = 0;
-        while(response != 200){
+        while (response != 200) {
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          response = httpPOSTRequest(serverName, myObject,0);  //POST the JSON object
+          response = httpPOSTRequest(serverName, myObject, 0);  //POST the JSON object
           counter++;
-          if(counter <= 4 && response == 200){
-            Serial.println(" reposting succesfull."); //Print the response code if desired
-          }
-          else if(counter >= 5){
-            Serial.println(" reposting timeout."); //Print the response code if desired
+          if (counter <= 4 && response == 200) {
+            Serial.println(" reposting succesfull.");  //Print the response code if desired
+          } else if (counter >= 5) {
+            Serial.println(" reposting timeout.");  //Print the response code if desired
             response = 200;
           }
         }
       }
       //Post the timestamp and value in the second FRONTEND
-      String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/"+ String(queuedMessages[i].id) +"/measurement";
+      String serverName1 = String(serverName) + "/" + String(facadeID) + "/sensor/" + String(queuedMessages[i].id) + "/measurement";
       JSONVar myObject1;
       myObject1["time"] = timeStamps[i];
-	    myObject1["value"] = dataCANBUS;                          //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
-      int response1 = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
-      if(response1 == 200){
+      myObject1["value"] = dataCANBUS;                                     //Implement the sensors in the boards and then use the data field of the currentMessagesQueued
+      int response1 = httpPOSTRequest(serverName1.c_str(), myObject1, 1);  //POST the JSON object
+      if (response1 == 200) {
         //Serial.print(" posted 2nd backend, ");
         //Serial.println(response1);
-      }
-      else{
+      } else {
         int counter = 0;
-        while(response1 != 200){
+        while (response1 != 200) {
           //Find a solution for a negative response in case that the message has not been posted, in case that it is needed to store them somewhere, then think about expanding the memory
-          response1 = httpPOSTRequest(serverName1.c_str(), myObject1,1);  //POST the JSON object
+          response1 = httpPOSTRequest(serverName1.c_str(), myObject1, 1);  //POST the JSON object
           counter++;
-          if(counter <= 4 && response1 == 200){
-            Serial.println(" reposting succesfull."); //Print the response code if desired
-          }
-          else if(counter >= 5){
-            Serial.println(" reposting timeout."); //Print the response code if desired
+          if (counter <= 4 && response1 == 200) {
+            Serial.println(" reposting succesfull.");  //Print the response code if desired
+          } else if (counter >= 5) {
+            Serial.println(" reposting timeout.");  //Print the response code if desired
             response1 = 200;
           }
         }
@@ -445,7 +449,7 @@ int httpGETRequest(const char* serverName) {
   return httpResponseCode;
 }
 //Post a message in the server
-int httpPOSTRequest(const char* serverName, JSONVar myObject,int backend) {
+int httpPOSTRequest(const char* serverName, JSONVar myObject, int backend) {
   //Get the JSON elements descriptions in case it is necessary to create a new object.
   //jsonElements = httpGETRequest(serverName);
   // Your Domain name with URL path or IP address with path
@@ -463,11 +467,10 @@ int httpPOSTRequest(const char* serverName, JSONVar myObject,int backend) {
     //httpResponseCode = http.POST("{ \"sensordata\":[ { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 }, { \"id\": \"45\", \"type\": \"tempreture\", \"time\": \"2023-11-02T11:50:50+00:00\", \"value\": 99, \"row\": 1, \"column\": 2 } ] }");
     //String json = "{ \"sensordata\":[" + JSON.stringify(myObject) + "]}"; Altes String für den alten Backend
     String json = "";
-    if(backend == 1){
+    if (backend == 1) {
       json = JSON.stringify(myObject);
-    }
-    else{
-      json = "{\"id\":\"" + String(facadeID) + "\", \"sensors\":[" + JSON.stringify(myObject) + "]}"; //Falls dimensions noch hinzugefügt wird, dann muss ich hier wahrscheinlich das am Ende noch hinzufügen
+    } else {
+      json = "{\"id\":\"" + String(facadeID) + "\", \"sensors\":[" + JSON.stringify(myObject) + "]}";  //Falls dimensions noch hinzugefügt wird, dann muss ich hier wahrscheinlich das am Ende noch hinzufügen
     }
     //Serial.println(json);
     httpResponseCode = http.POST(json);
@@ -489,11 +492,11 @@ String getTime() {
     getEEPROMTimestamp();                                                                                           //Set the time before reading it, according to the clock IC if available, if not then from the EEPROM
     sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", year(), month(), day(), hour(), minute(), second());  //Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
     return (timestamp);
-  } else {                                                                                                                                                                              //If it was possible to get the information from the NTP server, then use this information and store it in the EEPROM and sync the IC Clock Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
+  } else {                                                                                                                                                                                      //If it was possible to get the information from the NTP server, then use this information and store it in the EEPROM and sync the IC Clock Get the time stamp in the ISO8601 format YYYY-MM-DDTHH:MM:SS+00:00
     sprintf(timestamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00", timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour + offsetUTC, timeinfo.tm_min, timeinfo.tm_sec);  //Store the NTP data in the timestamp variable
     setTime(timeinfo.tm_hour + offsetUTC, timeinfo.tm_min, timeinfo.tm_sec, timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);                                                    //Overwrite the internal clock of the ESP32 with the current value from the NTP server to refresh it with new data
-    CLOCKFlag = checkForI2CDevices(ADDRESS_PCF8523T);                                                                                                                                   ////Scan for the Clock IC and proof communication
-    if (CLOCKFlag) {                                                                                                                                                                    //If flag is active, the the time from the clock should be overwritten
+    CLOCKFlag = checkForI2CDevices(ADDRESS_PCF8523T);                                                                                                                                           ////Scan for the Clock IC and proof communication
+    if (CLOCKFlag) {                                                                                                                                                                            //If flag is active, the the time from the clock should be overwritten
       //register call
       Wire.write(0x03);  //It is just needed to call the first register, after that, all other registers are auto incremented
       //First overwrite register
@@ -605,9 +608,9 @@ float scaleCANBUStemperature(uint32_t data32) {
   float maxScaling = (2 << 14) - 1;
   float minScaling = 0.0;
   float tempA = -50.0;  //Check if these values are correct or not, before it was apparently working with -100 and 100
-  float tempB = 150.0; //Check if these values would work for the extern and intern temperature sensor or just with one sensor
+  float tempB = 150.0;  //Check if these values would work for the extern and intern temperature sensor or just with one sensor
   float result = ((((tempB - tempA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + tempA);
-  return result;
+  return (result, 1);
 }
 //Scaling for the CANBUS humidity Data
 float scaleCANBUShumidity(uint32_t data32) {
@@ -617,7 +620,7 @@ float scaleCANBUShumidity(uint32_t data32) {
   float humidA = 0.0;
   float humidB = 100.0;
   float result = ((((humidB - humidA) * (float(data32) - minScaling)) / (maxScaling - minScaling)) + humidA);
-  return result;
+  return (result, 0);
 }
 //Method for turning the I/O PCAL6408A ON/OFF
 void AusgangEinschalten(byte ADDRESS_PCAL6408A, byte data) {
@@ -642,40 +645,75 @@ bool checkForI2CDevices(byte address) {
 //Method for finding the different slaves on the line, the 4 ON/OFF outputs of the IC Expander should be switched, as well as the CANBUS lines, in order to communicate with the devices.
 void findSlaves() {
   Serial.println("Starting find slaves");                     //Info
-  for (int i = 0; i < CANBUSlines; i++) {                     //Loop for starting the 4 different channels
+  for (int i = 0; i < CANBUSlines; i++) {                     //Loop for starting the different power line channels
     AusgangEinschalten(ADDRESS_PCAL6408A, Konfiguration[i]);  //Turn the desired output ON/OFF
     const uint32_t errorCodeCANBUS = startCANBUSline(i + 1);  //Start the CANBUS line, there are 4 different transceivers, so there are 4 different channels 1-4
+      if (errorCodeCANBUS != 0) {
+        Serial.println("Fehler beim Starten von CAN-Line " + String(i+1));
+        AusgangEinschalten(ADDRESS_PCAL6408A, 0xff);
+        continue;
+      } 
     delay(SlavesTurnOnDelay);                                 //Wait for the slaves to start, around two seconds should be fine, if not then 5 seconds
     CANMessage findSlavesFrame;                               //Frame configuration for the find process from the slaves
     findSlavesFrame.ext = false;
     findSlavesFrame.id = findSlavesFrameID;
     findSlavesFrame.rtr = true;
+    findSlavesFrame.len = 0;
     for (int j = 0; j < maxSlavesInLine; j++) {  //Loop for doing the process as many times as maxSlavesInLine, since the slaves are turned on, one by one.
       int overflow = 0;
+      int overflowNewAdress = 0;
       findMessageReceived = false;
-      CANMessage findSlavesAnswer;  //No initialization needed, since the message will be read from the slaves
+      newAdressMessageReceived = false; //newAdressMessageReceived auf False setzten, damit beim nächsten Vorgang, der Prozess wieder durchgeführt werden kann.
+      CANMessage findSlavesAnswer;                                                //No initialization needed, since the message will be read from the slaves
       for (int m = 0; m < maxSlavesInLine; m++) {
-        const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
-        Serial.println("CAN message was sent");                     //Info
-        delay(30);
+      const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
+      Serial.println("CAN message was sent");                                     //Info
+      delay(30);
       }
       while (!findMessageReceived) {                      //Wait for an answer
         if (ACAN_ESP32::can.receive(findSlavesAnswer)) {  //If got reponse from the slave then process the information
-          int tempArray[maxSlavesInLine] = { 0 };         //Initialize array to store the current values of the current row i-CANBUSlines
-          for (int k = 0; k < maxSlavesInLine; k++) {
-            tempArray[k] = potsMatrix[i][k];  //Store the current row i-CANBUSlines in the temp array.
-          }
-          nextSlaveFlag = valueInArray(findSlavesAnswer.id >> 8, tempArray, maxSlavesInLine);  //Check if the id of the received message is contained int the temp array or not
-          if (!nextSlaveFlag) {                                                                //If the id of the received message is new, then store the id in the potsMatrix array
-            potsMatrix[i][j] = findSlavesAnswer.id >> 8;                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
-            Serial.println(potsMatrix[i][j]);                                                  //Info
-          } else {
-            potsMatrix[i][j] = 11;  //error address for the slaves
+          if (findSlavesAnswer.id == 0xAA00) {
+            Serial.print("Send message with new adress: ");  //Info
+            CANMessage newAddr;
+            newAddr.id  = newAddressFrameID & 0x1FFFFFFF;  // 0x5D
+            newAddr.ext = true;    // Extended ID
+            newAddr.rtr = false;    // Remote?
+            newAddr.len = 4;       // oder 0, je nach Protokoll
+            newAddr.data32[0] = (i+1)*10 + (j+1);                              //Rausfinden wie ich die Data beim Pico richtig auslesen kann, bis jetzt war es nicht möglich
+            const bool okNewAdressFrame = ACAN_ESP32::can.tryToSend(newAddr);  //Sent remote frame to the BUS in order to start the find process
+            Serial.println(newAddr.data32[0]);                   //Info
+            CANMessage newAdressAnswer;                                               //No initialization needed, since the message will be read from the slaves
+            delay(30);
+            while (!newAdressMessageReceived) {                 //Wait for an answer
+              if (ACAN_ESP32::can.receive(newAdressAnswer)) {   //If got reponse from the slave then process the information
+                Serial.print("Slave confirmed new address, it is supossed to be:");  //Info
+                Serial.println(newAddr.data32[0]);       //Info
+                Serial.print("And it is: ");
+                Serial.println(newAdressAnswer.id);             //Info
+                Serial.print("And the data is: ");
+                Serial.println(newAdressAnswer.data32[0]);             //Info
+                potsMatrix[i][j] = (i+1)*10 + (j+1);                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
+                Serial.print("Matrix value: ");
+                Serial.println(potsMatrix[i][j]);                                                  //Info
+                newAdressMessageReceived = true;
+              } else if (overflowNewAdress > overflowTimer) {
+                Serial.println("Overflow new address");  //Info
+                potsMatrix[i][j] = 99;  //error address for the slaves
+                newAdressMessageReceived = true;
+              }
+              overflowNewAdress += 1;
+              delay(1);
+            }
+          } 
+          else {
+            Serial.println("different ID, not address needed");  //Info
+            
           }
           findMessageReceived = true;
-        } else if (overflow > overflowTimer) {
-          findMessageReceived = true;
-          potsMatrix[i][j] = 11;  //error address for the slaves
+        } 
+        else if (overflow > overflowTimer) {
+        findMessageReceived = true;
+        potsMatrix[i][j] = 99;  //error address for the slaves
         }
         overflow += 1;
         delay(1);
