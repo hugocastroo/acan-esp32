@@ -9,9 +9,10 @@
 %					using the CANBUS protocol. After sampling the information
 %					in the CANBUS line, the script uploads the measurements
 %					using HTTP protocol.
-%   Date:           06/12/2023      
+%   Date:           03/06/2025
 %   Programmer:     Hugo Valentin Castro Saenz
 %   History:
+% V35:    Implement the plug-in Address allocation, for the slaves, now the master is giving the address to the slaves and they store it in the flash memory
 % V34:    Added a 10 seconds delay for posting information of the weatherstation, since now there are two weather stations installed
 & V33:    Changed the watering flag to 15K ms to give more time to the PGE to finish watering and avoid that one ventil stays open.
 % V32:    Changed the wateringFlag activation, since it was wrong and it was beeing activated even by the temperature measurements and not just
@@ -65,7 +66,6 @@
 //Delays
 #define I2CDelay 10             //Delay in ms für die I2C Befehle
 #define SlavesTurnOnDelay 2000  // (ms) Wait for the slaves to warm up and be able to send information
-#define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
 #define overflowTimer 3000      //Delay in ms for the overflow while looking for new slaves.
 #define WeatherStationUploadingDelay 10000 //Delay in ms for the information that is beeing load from the external weather station
 //Misc.
@@ -74,10 +74,8 @@ int findSlavesFrameID = 91;  //ID for the findSlaves frame to start the find sla
 int requestFrameID = 92;     //ID for the requestFrameID frame to start the find slaves process		DEC 92 - HEX 5C
 const uint32_t newAddressFrameID = 0x8000005DUL;
 
-int offsetUTC = 0;           //Offset für die Zeitzonen Uhrzeit ist in UTC, dann soll die Zeitzone hier inkrementiert oder dekrementiert werden
 #define ArrayLimit 99        //Limit for the array storage of the queued messages, THIS IS LIMITED BY THE RAM MEMORY, so it cannot be too big, still need to check what are the limits.
 #define Samplings 100        //Number of samplings that should be done in order to scan for CANBUS messages
-#define humidityTreshold 30  //Treshold for the humidity to start the ventils or not.
 //Flags
 bool InfoPrint = false;                 //Change flag to show chip and BUS settings in the serial monitor 0-1
 bool ErrorInfoPrint = true;             //Change flag to show ErrorStatics of the CANBUS in the serial monitor 0-1
@@ -89,17 +87,34 @@ bool wateringFlag = false;              //Flag for the system to know if it is n
 bool findMessageReceived = false;       //Flag for identifing when a find message was received and stop scaning for a message
 bool newAdressMessageReceived = false;  //Flag for identifing when a find message was received and stop scaning for a message
 bool weatherStationFlag = false;        //Flag for knowing if data from the weather station was received or not
+
+////////////////////////////////////////Configurable Variables for the size of the Fassade///////////////////////////////////////////////////////////////////////
+//Four possible CAN channels with Konfiguration, if all the parameters are added, then all four channels will be active, if just two param are added, then just one channel is on
+unsigned char Konfiguration[] = { 0x7F, 0xBF};  //PCAL6408A configuration array for turning on the different I/O { 0x7F, 0xBF, 0xDF, 0xEF }
+//Number of slave in every lane, there is no limit until now, this should be tested.
+const uint32_t maxSlavesInLine = 3;
+const uint32_t CANBUSlines = sizeof(Konfiguration);    //Count of the different CANBUS lines/states that should be turned on
 //Internet access // Replace with network credentials
-//const char* ssid = "ShellyPro1-EC626091346C";
-//const char* password = "Demonstrator";
-const char* ssid = "Mexicano";
-const char* password = "Mexicano";
+const char* ssid = "ShellyPro1-EC626091346C";
+const char* password = "Demonstrator";
+//Replace with the lowest humidity desired, depending on the plants and application
+#define humidityTreshold 30  //Treshold for the humidity to start the ventils or not.
+//Replace with the desired watering interval, according to the application
+#define wateringDelay 15000     //Delay in ms for waiting for the valve to water the pot
+//replace according to the time zone
+int offsetUTC = 0;           //Offset für die Zeitzonen Uhrzeit ist in UTC, dann soll die Zeitzone hier inkrementiert oder dekrementiert werden
+//Replace according to the fassade configuration and serverconfiguration
+// NTP SERVER - API variables
+const char* ntpServer = "pool.ntp.org";                             //NTP server for getting the time online
+const char* serverName = "https://gruenfacade.web.app/api/facade";  //Your Domain name with URL path or IP address with path for HTTP Posting
+const char* facadeID = "demonstrator";                              //Id for the facade, this plays a role for the backend
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 //I2C Parameters
 int ADDRESS_PCF8523T = 104;                            //Address in int, for some reason, if I do it in Byte and hex, it does not work  for the I2C CLOCK aquired with the SensorFindIC2Adress.ino script 0x68 = 104
 int ADDRESS_PCAL6408A = 32;                            //Address for the I/O expander aquired with the SensorFindIC2Adress.ino script 0x20 = 32
 unsigned char PCAL6408ARegister = 0x03;                //PCAL6408A register array for setting the configuration to turn on/off one I/O //Original unsigned char PCAL6408ARegister[] = {0x4F, 0x03, 0x01, 0x43};
-unsigned char Konfiguration[] = { 0x7F, 0xBF};  //PCAL6408A configuration array for turning on the different I/O //Original { 0x80, 0x40, 0x20, 0x10 } { 0x7F, 0xBF, 0xDF, 0xEF }
-const uint32_t CANBUSlines = sizeof(Konfiguration);    //Count of the different CANBUS lines/states that should be turned on
+
 //CANBUS variables
 static const uint32_t DESIRED_BIT_RATE = 1000UL * 125UL;  // 125 Kb/s ESP32 Desired Bit Rate
 unsigned long referenzMillis = 1000 * 60 * 59;            //Counter for the time loop
@@ -111,13 +126,10 @@ String timeStamps[ArrayLimit];                            //Array for storing th
 //Counter for debugging and statistics of the BUS
 uint32_t ReceivedFrameCount = 0;  //Counter for the received frames  from the slavesin the CANBUS line
 uint32_t SentFrameCount = 0;      //Counter for the sent frames from the Master in the CANBUS line
-const uint32_t maxSlavesInLine = 3;
 uint32_t potsMatrix[CANBUSlines][maxSlavesInLine] = { { 0 } };  //Array for storing the matrix of the system pots
 ModbusMaster node;                                              //object node for class ModbusMaster
-// NTP SERVER - API variables
-const char* ntpServer = "pool.ntp.org";                             //NTP server for getting the time online
-const char* serverName = "https://gruenfacade.web.app/api/facade";  //Your Domain name with URL path or IP address with path for HTTP Posting
-const char* facadeID = "demonstrator";                              //Id for the facade, this plays a role for the backend
+
+//For storing in EEPROM
 Preferences preferences;                                            //Variables and instances for the EEPROM rewrite/read procedure
 const char* spaceEEPROM = "timestamp";                              //variable for the EEPROM procedure
 const char* paramEEPROM = "stamp";                                  //variable for the EEPROM procedure
@@ -658,7 +670,7 @@ void findSlaves() {
       for (int m = 0; m < maxSlavesInLine; m++) {
       const bool okfindSlavesFrame = ACAN_ESP32::can.tryToSend(findSlavesFrame);  //Sent remote frame to the BUS in order to start the find process
       Serial.println("CAN message was sent");                                     //Info
-      delay(30);
+      delay(100);
       }
       while (!findMessageReceived) {                      //Wait for an answer
         if (ACAN_ESP32::can.receive(findSlavesAnswer)) {  //If got reponse from the slave then process the information
@@ -669,7 +681,7 @@ void findSlaves() {
             newAddr.ext = true;    // Extended ID
             newAddr.rtr = false;    // Remote?
             newAddr.len = 4;       // oder 0, je nach Protokoll
-            newAddr.data32[0] = (i+3)*10 + (j+1);                              //Rausfinden wie ich die Data beim Pico richtig auslesen kann, bis jetzt war es nicht möglich
+            newAddr.data32[0] = (i+2)*10 + (j+2);                              //Rausfinden wie ich die Data beim Pico richtig auslesen kann, bis jetzt war es nicht möglich
             const bool okNewAdressFrame = ACAN_ESP32::can.tryToSend(newAddr);  //Sent remote frame to the BUS in order to start the find process
             Serial.println(newAddr.data32[0]);                   //Info
             CANMessage newAdressAnswer;                                               //No initialization needed, since the message will be read from the slaves
@@ -680,11 +692,7 @@ void findSlaves() {
                 Serial.println(newAddr.data32[0]);       //Info
                 Serial.print("And it is: ");
                 Serial.println(newAdressAnswer.id);             //Info
-                Serial.print("And the data is: ");
-                Serial.println(newAdressAnswer.data32[0]);             //Info
-                potsMatrix[i][j] = (i+3)*10 + (j+1);                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
-                Serial.print("Matrix value: ");
-                Serial.println(potsMatrix[i][j]);                                                  //Info
+                potsMatrix[i][j] = (i+2)*10 + (j+2);                                       //Store the answer in a 2D Matrix for mapping the Pflanzgefäße
                 newAdressMessageReceived = true;
               } else if (overflowNewAdress > overflowTimer) {
                 Serial.println("Overflow new address");  //Info
@@ -702,6 +710,7 @@ void findSlaves() {
           findMessageReceived = true;
         } 
         else if (overflow > overflowTimer) {
+        Serial.println("Overflow 2");  //Info
         findMessageReceived = true;
         potsMatrix[i][j] = 99;  //error address for the slaves
         }
